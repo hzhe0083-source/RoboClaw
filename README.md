@@ -52,4 +52,4 @@ For Chinese, see [README.zh.md](README.zh.md).
 
 ## WeChat Group
 
-<img src="wechat/wechat_group.jpg" alt="RoboClaw WeChat Group" width="300" />
+<img src="wechat/wechat_group.png" alt="RoboClaw WeChat Group" width="300" />
