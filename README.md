@@ -85,9 +85,9 @@ Areas where contributions are especially useful right now include:
 
 RoboClaw is an open-source project for embodied intelligence assistants. It focuses not only on model capability, but also on embodiment abstraction, skill interfaces, execution supervision, simulation integration, and real robot deployment.
 
-### What is the relationship between RoboClaw, OpenClaw, and nanobot?
+### What is the relationship between RoboClaw and OpenClaw?
 
-OpenClaw and nanobot have been important inspirations for us, and RoboClaw continues to evolve from nanobot. But RoboClaw is not focused on being a general assistant. Its emphasis is on embodiment, skills, execution supervision, simulation, and real-world robot deployment.
+OpenClaw and several lightweight agent projects have been important inspirations for us. But RoboClaw is not focused on being a general assistant. Its emphasis is on embodiment, skills, execution supervision, simulation, and real-world robot deployment.
 
 ### How is this different from the usual "goal understanding -> planning -> sub-skills -> execution" approach?
 
@@ -120,4 +120,4 @@ If you want to be an active contributor, please contact us by emailing bozhaonan
 
 ## 🙏 Acknowledgments
 
-RoboClaw references and inherits part of its initial thinking from [nanobot](https://github.com/HKUDS/nanobot). We appreciate its lightweight practice along the OpenClaw line, which helped us build the first prototype faster and continue evolving toward embodied intelligence.
+RoboClaw references and inherits part of its initial thinking from earlier lightweight agent projects in the OpenClaw line. That work helped us build the first prototype faster and continue evolving toward embodied intelligence.

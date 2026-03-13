@@ -1,8 +1,8 @@
 from typing import Any
 
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.agent.tools.shell import ExecTool
+from roboclaw.agent.tools.base import Tool
+from roboclaw.agent.tools.registry import ToolRegistry
+from roboclaw.agent.tools.shell import ExecTool
 
 
 class SampleTool(Tool):

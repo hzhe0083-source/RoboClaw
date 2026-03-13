@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.dingtalk import DingTalkChannel
-from nanobot.config.schema import DingTalkConfig
+from roboclaw.bus.queue import MessageBus
+from roboclaw.channels.dingtalk import DingTalkChannel
+from roboclaw.config.schema import DingTalkConfig
 
 
 class _FakeResponse:
@@ -56,7 +56,7 @@ async def test_group_send_uses_group_messages_api() -> None:
         "token",
         "group:conv123",
         "sampleMarkdown",
-        {"text": "hello", "title": "Nanobot Reply"},
+        {"text": "hello", "title": "RoboClaw Reply"},
     )
 
     assert ok is True

@@ -16,12 +16,12 @@ WORKDIR /app
 
 # Install Python dependencies first (cached layer)
 COPY pyproject.toml README.md LICENSE ./
-RUN mkdir -p nanobot bridge && touch nanobot/__init__.py && \
+RUN mkdir -p roboclaw bridge && touch roboclaw/__init__.py && \
     uv pip install --system --no-cache . && \
-    rm -rf nanobot bridge
+    rm -rf roboclaw bridge
 
 # Copy the full source and install
-COPY nanobot/ nanobot/
+COPY roboclaw/ roboclaw/
 COPY bridge/ bridge/
 RUN uv pip install --system --no-cache .
 
