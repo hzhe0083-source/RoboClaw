@@ -25,12 +25,20 @@ from roboclaw.embodied.workspace import (
     WorkspaceAssetContract,
     WorkspaceAssetKind,
     WorkspaceExportConvention,
+    WorkspaceProvenance,
 )
 
 WORKSPACE_ASSET = WorkspaceAssetContract(
     kind=WorkspaceAssetKind.ASSEMBLY,
     schema_version=WORKSPACE_SCHEMA_VERSION,
     export_convention=WorkspaceExportConvention.ASSEMBLY,
+    provenance=WorkspaceProvenance(
+        source="workspace_template",
+        generator="roboclaw_agent",
+        generated_by="<generated_by>",
+        generated_at="<generated_at_iso8601>",
+        source_session="<source_session_id>",
+    ),
 )
 
 ARM_CONFIG = Ros2RobotConfig(

@@ -27,8 +27,13 @@ from roboclaw.embodied import (
     TelemetryPhase,
     TelemetrySeverity,
     WorkspaceAssetKind,
+    WorkspaceInspectOptions,
     WorkspaceIssueLevel,
+    WorkspaceLintProfile,
     WorkspaceMigrationPolicy,
+    WorkspaceValidationStage,
+    WorkspaceProvenance,
+    dry_run_workspace_assets,
     build_default_catalog,
     compose_assemblies,
     inspect_workspace_assets,
@@ -443,6 +448,7 @@ def test_workspace_asset_contract_detects_duplicate_ids(tmp_path: Path) -> None:
 
     assert report.has_errors
     assert any(issue.code == "DUPLICATE_ASSET_ID" for issue in report.issues)
+    assert any(issue.stage == WorkspaceValidationStage.SCHEMA for issue in report.issues)
     assert report.loaded_counts[WorkspaceAssetKind.ROBOT] == 1
 
 
@@ -481,6 +487,78 @@ def test_workspace_asset_contract_supports_migration_policy(tmp_path: Path) -> N
     assert report.has_warnings
     assert any(issue.level == WorkspaceIssueLevel.WARNING for issue in report.issues)
     assert any(issue.code == "UNSUPPORTED_SCHEMA_VERSION" for issue in report.issues)
+    assert any(issue.stage == WorkspaceValidationStage.SCHEMA for issue in report.issues)
     assert any("accept_unsupported" in issue.message for issue in report.issues)
     assert report.loaded_counts[WorkspaceAssetKind.ROBOT] == 1
     assert WorkspaceMigrationPolicy.ACCEPT_UNSUPPORTED.value == "accept_unsupported"
+
+
+def test_workspace_dry_run_reports_staged_provenance(tmp_path: Path) -> None:
+    robots_dir = tmp_path / "embodied" / "robots"
+    robots_dir.mkdir(parents=True, exist_ok=True)
+
+    robots_dir.joinpath("robot.py").write_text(
+        "\n".join(
+            [
+                "from roboclaw.embodied import SO101_ROBOT",
+                "from roboclaw.embodied.workspace import (",
+                "    WORKSPACE_SCHEMA_VERSION,",
+                "    WorkspaceAssetContract,",
+                "    WorkspaceAssetKind,",
+                "    WorkspaceExportConvention,",
+                "    WorkspaceProvenance,",
+                ")",
+                "",
+                "WORKSPACE_ASSET = WorkspaceAssetContract(",
+                "    kind=WorkspaceAssetKind.ROBOT,",
+                "    schema_version=WORKSPACE_SCHEMA_VERSION,",
+                "    export_convention=WorkspaceExportConvention.ROBOT,",
+                "    provenance=WorkspaceProvenance(",
+                "        source='workspace',",
+                "        generator='roboclaw_agent',",
+                "        generated_by='agent:test',",
+                "        generated_at='2026-03-17T15:00:00Z',",
+                "    ),",
+                ")",
+                "",
+                "ROBOT = SO101_ROBOT",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = dry_run_workspace_assets(tmp_path)
+
+    assert report.has_errors is False
+    assert report.staged_assets
+    staged = report.staged_assets[0]
+    assert staged.kind == WorkspaceAssetKind.ROBOT
+    assert staged.provenance.generator == "roboclaw_agent"
+    assert staged.provenance.generated_by == "agent:test"
+    assert report.stage_counts[WorkspaceValidationStage.LINT] == 0
+
+
+def test_workspace_strict_lint_blocks_missing_contract_metadata(tmp_path: Path) -> None:
+    robots_dir = tmp_path / "embodied" / "robots"
+    robots_dir.mkdir(parents=True, exist_ok=True)
+
+    robots_dir.joinpath("legacy_robot.py").write_text(
+        "\n".join(
+            [
+                "from roboclaw.embodied import SO101_ROBOT",
+                "ROBOT = SO101_ROBOT",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = inspect_workspace_assets(
+        tmp_path,
+        options=WorkspaceInspectOptions(lint_profile=WorkspaceLintProfile.STRICT),
+    )
+
+    assert report.has_errors
+    assert any(issue.code == "CONTRACT_METADATA_MISSING" for issue in report.issues)
+    assert any(issue.stage == WorkspaceValidationStage.LINT for issue in report.issues)

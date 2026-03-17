@@ -24,7 +24,7 @@ from roboclaw.embodied.execution import (
 )
 
 if TYPE_CHECKING:
-    from roboclaw.embodied.workspace import WorkspaceLoadReport
+    from roboclaw.embodied.workspace import WorkspaceInspectOptions, WorkspaceLoadReport
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,10 @@ def build_default_catalog() -> EmbodiedCatalog:
     )
 
 
-def build_catalog(workspace: Path | None = None) -> EmbodiedCatalog:
+def build_catalog(
+    workspace: Path | None = None,
+    workspace_options: WorkspaceInspectOptions | None = None,
+) -> EmbodiedCatalog:
     """Build the framework catalog and optionally merge workspace assets."""
 
     catalog = build_default_catalog()
@@ -92,12 +95,15 @@ def build_catalog(workspace: Path | None = None) -> EmbodiedCatalog:
 
     from roboclaw.embodied.workspace import load_workspace_assets
 
-    return load_workspace_assets(catalog, workspace)
+    return load_workspace_assets(catalog, workspace, options=workspace_options)
 
 
-def inspect_workspace(workspace: Path) -> WorkspaceLoadReport:
+def inspect_workspace(
+    workspace: Path,
+    options: WorkspaceInspectOptions | None = None,
+) -> WorkspaceLoadReport:
     """Inspect workspace assets using loader static contract checks."""
 
     from roboclaw.embodied.workspace import inspect_workspace_assets
 
-    return inspect_workspace_assets(workspace)
+    return inspect_workspace_assets(workspace, options=options)

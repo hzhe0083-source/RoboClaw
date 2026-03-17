@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from types import ModuleType
@@ -67,6 +67,42 @@ class WorkspaceIssueLevel(StrEnum):
     ERROR = "error"
 
 
+class WorkspaceValidationStage(StrEnum):
+    """Validation stage where one issue is produced."""
+
+    IMPORT = "import"
+    SCHEMA = "schema"
+    CATALOG_CONFLICT = "catalog_conflict"
+    LINT = "lint"
+
+
+class WorkspaceLintProfile(StrEnum):
+    """Lint profile controlling strictness of workspace checks."""
+
+    BASIC = "basic"
+    STRICT = "strict"
+
+
+@dataclass(frozen=True)
+class WorkspaceProvenance:
+    """Source metadata for generated workspace assets."""
+
+    source: str = "workspace"
+    generator: str | None = None
+    generated_by: str | None = None
+    generated_at: str | None = None
+    source_session: str | None = None
+    source_path: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("Workspace provenance source cannot be empty.")
+        for field_name in ("generator", "generated_by", "generated_at", "source_session", "source_path"):
+            value = getattr(self, field_name)
+            if value is not None and not value.strip():
+                raise ValueError(f"Workspace provenance {field_name} cannot be empty when specified.")
+
+
 @dataclass(frozen=True)
 class WorkspaceAssetContract:
     """Metadata contract for one workspace asset module."""
@@ -75,6 +111,7 @@ class WorkspaceAssetContract:
     schema_version: str = WORKSPACE_SCHEMA_VERSION
     export_convention: WorkspaceExportConvention = WorkspaceExportConvention.AUTO
     migration_policy: WorkspaceMigrationPolicy = WorkspaceMigrationPolicy.STRICT
+    provenance: WorkspaceProvenance = field(default_factory=WorkspaceProvenance)
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
@@ -87,18 +124,44 @@ class WorkspaceValidationIssue:
     """One static validation issue for workspace loading."""
 
     level: WorkspaceIssueLevel
+    stage: WorkspaceValidationStage
     code: str
     path: str
     message: str
 
 
 @dataclass(frozen=True)
+class WorkspaceStagedAsset:
+    """Staged workspace asset metadata for dry-run reporting."""
+
+    kind: WorkspaceAssetKind
+    asset_id: str
+    path: str
+    module_name: str
+    schema_version: str
+    provenance: WorkspaceProvenance
+
+
+@dataclass(frozen=True)
+class WorkspaceInspectOptions:
+    """Options for workspace inspection and dry-run behavior."""
+
+    lint_profile: WorkspaceLintProfile = WorkspaceLintProfile.BASIC
+    require_contract_metadata: bool = False
+    require_provenance_metadata: bool = False
+    fail_on_warnings: bool = False
+    include_staged_assets: bool = True
+
+
+@dataclass(frozen=True)
 class WorkspaceLoadReport:
-    """Validation and staging report for workspace assets."""
+    """Validation and staging report for workspace assets and dry-run."""
 
     root: str
     schema_version: str = WORKSPACE_SCHEMA_VERSION
+    lint_profile: WorkspaceLintProfile = WorkspaceLintProfile.BASIC
     loaded_counts: dict[WorkspaceAssetKind, int] = field(default_factory=dict)
+    staged_assets: tuple[WorkspaceStagedAsset, ...] = field(default_factory=tuple)
     issues: tuple[WorkspaceValidationIssue, ...] = field(default_factory=tuple)
 
     @property
@@ -108,6 +171,13 @@ class WorkspaceLoadReport:
     @property
     def has_warnings(self) -> bool:
         return any(issue.level == WorkspaceIssueLevel.WARNING for issue in self.issues)
+
+    @property
+    def stage_counts(self) -> dict[WorkspaceValidationStage, int]:
+        counts = {stage: 0 for stage in WorkspaceValidationStage}
+        for issue in self.issues:
+            counts[issue.stage] += 1
+        return counts
 
 
 @dataclass(frozen=True)
@@ -131,6 +201,8 @@ class _StagedAsset:
     kind: WorkspaceAssetKind
     asset_id: str
     path: Path
+    module_name: str
+    contract: WorkspaceAssetContract
     value: object
 
 
@@ -179,47 +251,111 @@ _GROUP_SPECS = (
     ),
 )
 
+_REQUIRED_FIELDS_BY_KIND: dict[WorkspaceAssetKind, tuple[str, ...]] = {
+    WorkspaceAssetKind.ROBOT: ("id", "robot_type", "primitives"),
+    WorkspaceAssetKind.SENSOR: ("id", "kind", "description"),
+    WorkspaceAssetKind.ASSEMBLY: ("id", "robots", "execution_targets"),
+    WorkspaceAssetKind.ADAPTER: ("id", "assembly_id", "transport", "supported_targets"),
+    WorkspaceAssetKind.DEPLOYMENT: ("id", "assembly_id", "target_id"),
+    WorkspaceAssetKind.WORLD: ("id", "simulator", "description"),
+    WorkspaceAssetKind.SCENARIO: ("id", "assembly_id", "target_id", "world_id"),
+}
 
-def inspect_workspace_assets(workspace: Path) -> WorkspaceLoadReport:
-    """Inspect workspace assets with static checks and duplicate detection."""
 
+def inspect_workspace_assets(
+    workspace: Path,
+    options: WorkspaceInspectOptions | None = None,
+) -> WorkspaceLoadReport:
+    """Inspect workspace assets with static checks and lint metadata."""
+
+    normalized_options = _normalize_inspect_options(options)
     root = workspace.expanduser().resolve() / "embodied"
-    staged, report = _collect_workspace_assets(root)
+    staged, report = _collect_workspace_assets(root, normalized_options)
+    if not normalized_options.include_staged_assets:
+        return replace(report, staged_assets=tuple())
     del staged
     return report
 
 
-def load_workspace_assets(catalog: EmbodiedCatalog, workspace: Path) -> EmbodiedCatalog:
+def dry_run_workspace_assets(
+    workspace: Path,
+    options: WorkspaceInspectOptions | None = None,
+) -> WorkspaceLoadReport:
+    """Alias for explicit workspace dry-run usage."""
+
+    return inspect_workspace_assets(workspace, options=options)
+
+
+def validate_workspace_assets(
+    workspace: Path,
+    options: WorkspaceInspectOptions | None = None,
+) -> WorkspaceLoadReport:
+    """Validate workspace assets and return structured report."""
+
+    return inspect_workspace_assets(workspace, options=options)
+
+
+def load_workspace_assets(
+    catalog: EmbodiedCatalog,
+    workspace: Path,
+    options: WorkspaceInspectOptions | None = None,
+) -> EmbodiedCatalog:
     """Load workspace-generated embodied assets into an existing catalog."""
 
+    normalized_options = _normalize_inspect_options(options)
     root = workspace.expanduser().resolve() / "embodied"
-    staged_assets, report = _collect_workspace_assets(root)
+    staged_assets, report = _collect_workspace_assets(root, normalized_options)
     report = _check_catalog_conflicts(catalog, staged_assets, report)
 
-    if report.has_errors:
-        raise ValueError(_format_workspace_errors(report))
+    if report.has_errors or (normalized_options.fail_on_warnings and report.has_warnings):
+        raise ValueError(
+            _format_workspace_errors(
+                report,
+                fail_on_warnings=normalized_options.fail_on_warnings,
+            )
+        )
 
     for asset in staged_assets:
         _register_staged_asset(catalog, asset)
     return catalog
 
 
-def _collect_workspace_assets(root: Path) -> tuple[list[_StagedAsset], WorkspaceLoadReport]:
+def _collect_workspace_assets(
+    root: Path,
+    options: WorkspaceInspectOptions,
+) -> tuple[list[_StagedAsset], WorkspaceLoadReport]:
     counts = {spec.kind: 0 for spec in _GROUP_SPECS}
     if not root.exists():
-        return [], WorkspaceLoadReport(root=str(root), loaded_counts=counts)
+        return [], WorkspaceLoadReport(
+            root=str(root),
+            lint_profile=options.lint_profile,
+            loaded_counts=counts,
+        )
 
     issues: list[WorkspaceValidationIssue] = []
     staged_assets: list[_StagedAsset] = []
 
     for spec in _GROUP_SPECS:
-        group_assets = _load_group(root.joinpath(*spec.relative_dir), spec, issues)
+        group_assets = _load_group(root.joinpath(*spec.relative_dir), spec, issues, options)
         staged_assets.extend(group_assets)
         counts[spec.kind] = len(group_assets)
 
+    staged_report_assets = tuple(
+        WorkspaceStagedAsset(
+            kind=item.kind,
+            asset_id=item.asset_id,
+            path=str(item.path),
+            module_name=item.module_name,
+            schema_version=item.contract.schema_version,
+            provenance=item.contract.provenance,
+        )
+        for item in staged_assets
+    )
     report = WorkspaceLoadReport(
         root=str(root),
+        lint_profile=options.lint_profile,
         loaded_counts=counts,
+        staged_assets=staged_report_assets if options.include_staged_assets else tuple(),
         issues=tuple(issues),
     )
     return staged_assets, report
@@ -229,6 +365,7 @@ def _load_group(
     root: Path,
     spec: _WorkspaceGroupSpec,
     issues: list[WorkspaceValidationIssue],
+    options: WorkspaceInspectOptions,
 ) -> list[_StagedAsset]:
     if not root.exists():
         return []
@@ -243,7 +380,7 @@ def _load_group(
         if module is None:
             continue
 
-        contract = _read_asset_contract(module, spec, path, issues)
+        contract = _read_asset_contract(module, spec, path, issues, options)
         if contract is None:
             continue
 
@@ -252,11 +389,14 @@ def _load_group(
             continue
 
         for item in exports:
+            if not _validate_asset_shape(item, spec, path, issues):
+                continue
             asset_id = _read_asset_id(item)
             if asset_id is None:
                 issues.append(
                     WorkspaceValidationIssue(
                         level=WorkspaceIssueLevel.ERROR,
+                        stage=WorkspaceValidationStage.SCHEMA,
                         code="ASSET_ID_MISSING",
                         path=str(path),
                         message=(
@@ -270,6 +410,7 @@ def _load_group(
                 issues.append(
                     WorkspaceValidationIssue(
                         level=WorkspaceIssueLevel.ERROR,
+                        stage=WorkspaceValidationStage.SCHEMA,
                         code="DUPLICATE_ASSET_ID",
                         path=str(path),
                         message=(
@@ -286,6 +427,8 @@ def _load_group(
                     kind=spec.kind,
                     asset_id=asset_id,
                     path=path,
+                    module_name=module.__name__,
+                    contract=contract,
                     value=item,
                 )
             )
@@ -298,6 +441,7 @@ def _read_asset_contract(
     spec: _WorkspaceGroupSpec,
     path: Path,
     issues: list[WorkspaceValidationIssue],
+    options: WorkspaceInspectOptions,
 ) -> WorkspaceAssetContract | None:
     if hasattr(module, "WORKSPACE_ASSET"):
         value = getattr(module, "WORKSPACE_ASSET")
@@ -305,6 +449,7 @@ def _read_asset_contract(
             issues.append(
                 WorkspaceValidationIssue(
                     level=WorkspaceIssueLevel.ERROR,
+                    stage=WorkspaceValidationStage.SCHEMA,
                     code="INVALID_WORKSPACE_ASSET_TYPE",
                     path=str(path),
                     message="WORKSPACE_ASSET must be an instance of WorkspaceAssetContract.",
@@ -313,12 +458,27 @@ def _read_asset_contract(
             return None
         contract = value
     else:
-        contract = WorkspaceAssetContract(kind=spec.kind)
+        contract = WorkspaceAssetContract(
+            kind=spec.kind,
+            provenance=WorkspaceProvenance(
+                source="implicit_contract",
+                source_path=str(path),
+            ),
+        )
+        _append_contract_metadata_issue(
+            issues=issues,
+            path=path,
+            options=options,
+            message=(
+                "WORKSPACE_ASSET metadata is missing; use explicit metadata to stabilize dry-run and migration."
+            ),
+        )
 
     if contract.kind != spec.kind:
         issues.append(
             WorkspaceValidationIssue(
                 level=WorkspaceIssueLevel.ERROR,
+                stage=WorkspaceValidationStage.SCHEMA,
                 code="ASSET_KIND_MISMATCH",
                 path=str(path),
                 message=(
@@ -333,6 +493,7 @@ def _read_asset_contract(
         issues.append(
             WorkspaceValidationIssue(
                 level=WorkspaceIssueLevel.ERROR,
+                stage=WorkspaceValidationStage.SCHEMA,
                 code="INVALID_EXPORT_CONVENTION",
                 path=str(path),
                 message=(
@@ -352,6 +513,7 @@ def _read_asset_contract(
         issues.append(
             WorkspaceValidationIssue(
                 level=level,
+                stage=WorkspaceValidationStage.SCHEMA,
                 code="UNSUPPORTED_SCHEMA_VERSION",
                 path=str(path),
                 message=(
@@ -364,6 +526,7 @@ def _read_asset_contract(
         if level == WorkspaceIssueLevel.ERROR:
             return None
 
+    _lint_provenance(contract, path, issues, options)
     return contract
 
 
@@ -388,6 +551,7 @@ def _read_exports(
         issues.append(
             WorkspaceValidationIssue(
                 level=WorkspaceIssueLevel.ERROR,
+                stage=WorkspaceValidationStage.SCHEMA,
                 code="MISSING_EXPORT",
                 path=str(path),
                 message=f"Expected export '{convention}' is missing.",
@@ -401,6 +565,7 @@ def _read_exports(
             issues.append(
                 WorkspaceValidationIssue(
                     level=WorkspaceIssueLevel.ERROR,
+                    stage=WorkspaceValidationStage.SCHEMA,
                     code="INVALID_PLURAL_EXPORT_TYPE",
                     path=str(path),
                     message=f"Export '{plural}' must be a tuple or list.",
@@ -424,6 +589,7 @@ def _resolve_auto_export_convention(
         issues.append(
             WorkspaceValidationIssue(
                 level=WorkspaceIssueLevel.ERROR,
+                stage=WorkspaceValidationStage.SCHEMA,
                 code="AMBIGUOUS_EXPORT",
                 path=str(path),
                 message=f"Use either '{singular}' or '{plural}', not both.",
@@ -437,6 +603,7 @@ def _resolve_auto_export_convention(
     issues.append(
         WorkspaceValidationIssue(
             level=WorkspaceIssueLevel.ERROR,
+            stage=WorkspaceValidationStage.SCHEMA,
             code="MISSING_EXPORT",
             path=str(path),
             message=f"Expected export '{singular}' or '{plural}'.",
@@ -456,6 +623,7 @@ def _check_catalog_conflicts(
             issues.append(
                 WorkspaceValidationIssue(
                     level=WorkspaceIssueLevel.ERROR,
+                    stage=WorkspaceValidationStage.CATALOG_CONFLICT,
                     code="CATALOG_ID_CONFLICT",
                     path=str(asset.path),
                     message=(
@@ -466,7 +634,9 @@ def _check_catalog_conflicts(
     return WorkspaceLoadReport(
         root=report.root,
         schema_version=report.schema_version,
+        lint_profile=report.lint_profile,
         loaded_counts=report.loaded_counts,
+        staged_assets=report.staged_assets,
         issues=tuple(issues),
     )
 
@@ -532,6 +702,97 @@ def _read_asset_id(item: object) -> str | None:
     return normalized or None
 
 
+def _validate_asset_shape(
+    item: object,
+    spec: _WorkspaceGroupSpec,
+    path: Path,
+    issues: list[WorkspaceValidationIssue],
+) -> bool:
+    required_fields = _REQUIRED_FIELDS_BY_KIND[spec.kind]
+    missing = [field_name for field_name in required_fields if not hasattr(item, field_name)]
+    if not missing:
+        return True
+
+    issues.append(
+        WorkspaceValidationIssue(
+            level=WorkspaceIssueLevel.ERROR,
+            stage=WorkspaceValidationStage.SCHEMA,
+            code="ASSET_SCHEMA_MISMATCH",
+            path=str(path),
+            message=(
+                f"{spec.kind.value} export is missing required fields {tuple(missing)} "
+                f"for expected schema {tuple(required_fields)}."
+            ),
+        )
+    )
+    return False
+
+
+def _append_contract_metadata_issue(
+    issues: list[WorkspaceValidationIssue],
+    path: Path,
+    options: WorkspaceInspectOptions,
+    message: str,
+) -> None:
+    level = WorkspaceIssueLevel.ERROR if options.require_contract_metadata else WorkspaceIssueLevel.WARNING
+    issues.append(
+        WorkspaceValidationIssue(
+            level=level,
+            stage=WorkspaceValidationStage.LINT,
+            code="CONTRACT_METADATA_MISSING",
+            path=str(path),
+            message=message,
+        )
+    )
+
+
+def _lint_provenance(
+    contract: WorkspaceAssetContract,
+    path: Path,
+    issues: list[WorkspaceValidationIssue],
+    options: WorkspaceInspectOptions,
+) -> None:
+    provenance = contract.provenance
+    missing_fields: list[str] = []
+    if provenance.generator is None:
+        missing_fields.append("generator")
+    if provenance.generated_by is None:
+        missing_fields.append("generated_by")
+    if provenance.generated_at is None:
+        missing_fields.append("generated_at")
+
+    if not missing_fields:
+        return
+
+    level = WorkspaceIssueLevel.ERROR if options.require_provenance_metadata else WorkspaceIssueLevel.WARNING
+    issues.append(
+        WorkspaceValidationIssue(
+            level=level,
+            stage=WorkspaceValidationStage.LINT,
+            code="PROVENANCE_METADATA_MISSING",
+            path=str(path),
+            message=(
+                f"WORKSPACE_ASSET.provenance is missing fields {tuple(missing_fields)}. "
+                "Populate provenance to improve dry-run traceability."
+            ),
+        )
+    )
+
+
+def _normalize_inspect_options(options: WorkspaceInspectOptions | None) -> WorkspaceInspectOptions:
+    if options is None:
+        options = WorkspaceInspectOptions()
+    if options.lint_profile == WorkspaceLintProfile.STRICT:
+        return WorkspaceInspectOptions(
+            lint_profile=WorkspaceLintProfile.STRICT,
+            require_contract_metadata=True,
+            require_provenance_metadata=True,
+            fail_on_warnings=True,
+            include_staged_assets=options.include_staged_assets,
+        )
+    return options
+
+
 def _try_load_module(path: Path, issues: list[WorkspaceValidationIssue]) -> ModuleType | None:
     try:
         return _load_module(path)
@@ -539,6 +800,7 @@ def _try_load_module(path: Path, issues: list[WorkspaceValidationIssue]) -> Modu
         issues.append(
             WorkspaceValidationIssue(
                 level=WorkspaceIssueLevel.ERROR,
+                stage=WorkspaceValidationStage.IMPORT,
                 code="IMPORT_ERROR",
                 path=str(path),
                 message=f"Could not import module: {exc}",
@@ -547,11 +809,15 @@ def _try_load_module(path: Path, issues: list[WorkspaceValidationIssue]) -> Modu
         return None
 
 
-def _format_workspace_errors(report: WorkspaceLoadReport) -> str:
+def _format_workspace_errors(report: WorkspaceLoadReport, fail_on_warnings: bool = False) -> str:
     errors = [issue for issue in report.issues if issue.level == WorkspaceIssueLevel.ERROR]
+    warnings = [issue for issue in report.issues if issue.level == WorkspaceIssueLevel.WARNING]
     lines = [f"Workspace asset validation failed for '{report.root}':"]
     for issue in errors:
-        lines.append(f"- [{issue.code}] {issue.path}: {issue.message}")
+        lines.append(f"- [error/{issue.stage.value}/{issue.code}] {issue.path}: {issue.message}")
+    if fail_on_warnings:
+        for issue in warnings:
+            lines.append(f"- [warning/{issue.stage.value}/{issue.code}] {issue.path}: {issue.message}")
     return "\n".join(lines)
 
 
