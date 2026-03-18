@@ -31,12 +31,15 @@ fi
 
 configure_proxy_env
 
+mkdir -p "${INSTANCE_DIR}/home/.cache/huggingface/lerobot"
+
 docker run --rm \
   --network host \
   --user "$(id -u):$(id -g)" \
   -e HOME=/roboclaw-instance/home \
   -e ROBOCLAW_CONFIG_PATH=/roboclaw-instance/config.json \
   -e ROBOCLAW_WORKSPACE_PATH=/roboclaw-instance/workspace \
+  -e ROBOCLAW_ROS2_NAMESPACE_PREFIX="$(ros2_namespace_prefix "${INSTANCE}" "${PROFILE}")" \
   -e HTTP_PROXY="${HTTP_PROXY:-}" \
   -e HTTPS_PROXY="${HTTPS_PROXY:-}" \
   -e ALL_PROXY="${ALL_PROXY:-}" \

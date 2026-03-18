@@ -119,6 +119,16 @@ instance_key() {
   printf '%s--%s\n' "${instance}" "${profile}"
 }
 
+ros2_namespace_prefix() {
+  local instance="${1}"
+  local profile
+  profile="$(docker_profile "${2:-}")"
+  local raw
+  raw="$(instance_key "${instance}" "${profile}")"
+  raw="${raw//[^A-Za-z0-9_]/_}"
+  printf '/roboclaw/%s\n' "${raw}"
+}
+
 instance_dir() {
   local instance="${1}"
   local profile
@@ -231,6 +241,13 @@ host_codex_auth_path() {
 
 host_oauth_cli_kit_auth_dir() {
   local path="${HOME}/.local/share/oauth-cli-kit/auth"
+  if [ -d "${path}" ]; then
+    printf '%s\n' "${path}"
+  fi
+}
+
+host_lerobot_calibration_dir() {
+  local path="${HOME}/.cache/huggingface/lerobot/calibration"
   if [ -d "${path}" ]; then
     printf '%s\n' "${path}"
   fi

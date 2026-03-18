@@ -21,6 +21,7 @@ configure_proxy_env
 prepare_auth_mounts "${INSTANCE}" "${PROFILE}"
 AUTH_PATH="$(host_codex_auth_path || true)"
 OAUTH_CLI_KIT_AUTH_DIR="$(host_oauth_cli_kit_auth_dir || true)"
+LEROBOT_CALIBRATION_DIR="$(host_lerobot_calibration_dir || true)"
 
 if [ "$#" -eq 0 ]; then
   set -- status
@@ -35,6 +36,7 @@ DOCKER_ARGS=(
   -e HOME=/roboclaw-instance/home
   -e ROBOCLAW_CONFIG_PATH=/roboclaw-instance/config.json
   -e ROBOCLAW_WORKSPACE_PATH=/roboclaw-instance/workspace
+  -e ROBOCLAW_ROS2_NAMESPACE_PREFIX="$(ros2_namespace_prefix "${INSTANCE}" "${PROFILE}")"
   -e HTTP_PROXY="${HTTP_PROXY:-}"
   -e HTTPS_PROXY="${HTTPS_PROXY:-}"
   -e ALL_PROXY="${ALL_PROXY:-}"
@@ -50,6 +52,10 @@ fi
 
 if [ -n "${OAUTH_CLI_KIT_AUTH_DIR}" ]; then
   DOCKER_ARGS+=(-v "${OAUTH_CLI_KIT_AUTH_DIR}:/roboclaw-instance/home/.local/share/oauth-cli-kit/auth")
+fi
+
+if [ -n "${LEROBOT_CALIBRATION_DIR}" ]; then
+  DOCKER_ARGS+=(-v "${LEROBOT_CALIBRATION_DIR}:/roboclaw-instance/home/.cache/huggingface/lerobot/calibration:ro")
 fi
 
 append_hardware_device_args DOCKER_ARGS

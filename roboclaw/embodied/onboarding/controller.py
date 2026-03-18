@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -906,6 +907,7 @@ class OnboardingController:
 
     def _render_deployment(self, state: SetupOnboardingState) -> str:
         facts = state.detected_facts
+        namespace = self._ros2_namespace(state)
         robot_entries = "\n".join(
             [
                 "\n".join(
@@ -938,7 +940,7 @@ class OnboardingController:
             "        'transport': 'ros2',",
             f"        'ros_distro': {self._resolved_ros2_distro(state)!r},",
             f"        'profile_id': {self._profile_id(state)!r},",
-            f"        'namespace': {f'/roboclaw/{state.assembly_id}/real'!r},",
+            f"        'namespace': {namespace!r},",
         ]
         if launch_line is not None:
             connection_lines.append(launch_line)
@@ -1115,12 +1117,20 @@ class OnboardingController:
         device = str(facts.get("serial_device") or "").strip()
         if profile is None or not device:
             return None
-        namespace = f"/roboclaw/{state.assembly_id}/real"
+        namespace = OnboardingController._ros2_namespace(state)
         return profile.stage1_launch_command(
             namespace=namespace,
             robot_id=primary_robot,
             device=device,
         )
+
+    @staticmethod
+    def _ros2_namespace(state: SetupOnboardingState) -> str:
+        prefix = str(os.environ.get("ROBOCLAW_ROS2_NAMESPACE_PREFIX") or "/roboclaw").strip() or "/roboclaw"
+        if not prefix.startswith("/"):
+            prefix = f"/{prefix}"
+        prefix = re.sub(r"[^A-Za-z0-9_/]", "_", prefix).rstrip("/") or "/roboclaw"
+        return f"{prefix}/{state.assembly_id}/real"
 
     @staticmethod
     def _asset_summary(state: SetupOnboardingState) -> str:
