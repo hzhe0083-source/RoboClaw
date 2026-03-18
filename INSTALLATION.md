@@ -2,7 +2,7 @@
 
 ## 1. Prerequisites
 
-假设你是从零开始：
+Start from a clean clone:
 
 ```bash
 git clone https://github.com/MINT-SJTU/RoboClaw.git
@@ -11,37 +11,37 @@ cd RoboClaw
 
 ## 2. Step 1: Install RoboClaw
 
-执行：
+Install the package in editable mode:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-安装成功后，`roboclaw` 命令应该已经可用，可以直接检查：
+After installation, the `roboclaw` command should be available:
 
 ```bash
 roboclaw --help
 ```
 
-预期结果：
+Expected result:
 
-- 能看到 `onboard`、`status`、`agent`、`provider` 等命令
+- commands such as `onboard`, `status`, `agent`, and `provider` are listed
 
 ## 3. Step 2: Initialize RoboClaw
 
-执行：
+Run:
 
 ```bash
 roboclaw onboard
 ```
 
-这一步应该创建 `~/.roboclaw/config.json`、`~/.roboclaw/workspace/` 和具身相关 scaffold，可以直接检查：
+This should create `~/.roboclaw/config.json`, `~/.roboclaw/workspace/`, and the initial embodied workspace scaffold. You can verify it with:
 
 ```bash
 find ~/.roboclaw -maxdepth 4 -type f | sort
 ```
 
-至少应该看到这些文件：
+You should see at least:
 
 ```text
 ~/.roboclaw/config.json
@@ -61,38 +61,38 @@ find ~/.roboclaw -maxdepth 4 -type f | sort
 
 ## 4. Step 3: Verify Status Output
 
-执行：
+Run:
 
 ```bash
 roboclaw status
 ```
 
-你要验证：
+Check that:
 
-- `Config` 显示为 `✓`
-- `Workspace` 显示为 `✓`
-- 当前 `Model` 显示正常
-- provider 状态和你机器上的真实情况一致
+- `Config` is shown as `✓`
+- `Workspace` is shown as `✓`
+- the current `Model` looks correct
+- provider status matches the actual state of your machine
 
 ## 5. Step 4: Configure the Model Provider
 
-在验证 `roboclaw agent` 之前，先把模型 provider 配好。
+Before testing `roboclaw agent`, make sure the model provider is configured.
 
-先执行：
+First run:
 
 ```bash
 roboclaw status
 ```
 
-看当前机器上哪些 provider 已经可用。
+This tells you which providers are already available on the current machine.
 
-常见情况有两类：
+Two common cases:
 
 ### 5.1 OAuth provider
 
-如果你用的是 OAuth provider，可以直接登录。
+If you are using an OAuth-based provider, log in directly.
 
-目前代码里已经实现了这两种：
+The current codebase supports:
 
 ```bash
 roboclaw provider login openai-codex
@@ -101,15 +101,15 @@ roboclaw provider login github-copilot
 
 ### 5.2 API key provider
 
-如果你用的是 API key provider，就直接编辑：
+If you are using an API-key-based provider, edit:
 
 ```bash
 ~/.roboclaw/config.json
 ```
 
-把对应 provider 的 key 和默认 model 配好。
+Fill in the provider key and default model there.
 
-常见的 API key provider 包括：
+Common API key providers include:
 
 - `openai`
 - `anthropic`
@@ -127,86 +127,86 @@ roboclaw provider login github-copilot
 - `custom`
 - `vllm`
 
-配好以后，再执行一次：
+Then run:
 
 ```bash
 roboclaw status
 ```
 
-你要验证：
+Check that:
 
-- 当前 `Model` 显示正确
-- 你要用的 provider 已经不是 `not set`
+- the current `Model` is correct
+- the provider you want to use is no longer `not set`
 
-## 6. Step 5: Verify the Model Path
+## 6. Step 5: Verify the Basic Model Path
 
-现在执行一条最简单的消息，确认 RoboClaw 已经能正常对话：
+Run one minimal message to confirm that RoboClaw can respond:
 
 ```bash
 roboclaw agent -m "hello"
 ```
 
-你要检查：
+Check that:
 
-- agent 能启动
-- agent 能正常返回内容
-- 如果失败，错误能明确指向模型配置、provider、网络或权限问题
+- the agent starts successfully
+- the agent returns a normal reply
+- failures point clearly to model configuration, provider setup, network, or permissions
 
 ## 7. Step 6: Let RoboClaw Start the Robot Setup Flow
 
-确认基础对话正常后，就可以开始让 RoboClaw 带你做机器人接入。
+Once the basic conversation path works, start the embodied setup flow.
 
-然后直接用自然语言告诉 RoboClaw 你的目标。
+Describe your goal in natural language.
 
-如果你接的是实机，可以这样说：
-
-```bash
-roboclaw agent -m "我想接入一台真实机器人，请一步一步带我完成配置。"
-```
-
-如果你已经知道是机械臂，也可以这样说：
+For a real robot:
 
 ```bash
-roboclaw agent -m "我想接入一台真实机械臂，请告诉我需要准备哪些信息，并一步一步带我完成配置。"
+roboclaw agent -m "I want to connect a real robot. Please guide me step by step."
 ```
 
-如果你接的是仿真环境，可以这样说：
+If you already know it is an arm:
 
 ```bash
-roboclaw agent -m "我想接入一个机器人仿真环境，请一步一步带我完成配置。"
+roboclaw agent -m "I want to connect a real robot arm. Tell me what information you need and guide me step by step."
 ```
 
-这一步你要检查：
+For a simulator:
 
-- RoboClaw 能理解你是在做第一次机器人接入
-- RoboClaw 会主动问你缺少的信息
-- RoboClaw 的提问是面向普通用户的
-- RoboClaw 不要求你先理解内部代码结构
+```bash
+roboclaw agent -m "I want to connect a robot simulation environment. Please guide me step by step."
+```
 
-如果它开始引导你填写设备信息、连接方式、传感器信息或运行环境，就说明这条流程开始工作了。
+At this step, check that:
 
-继续这轮对话后，可以再检查一次：
+- RoboClaw understands that this is a first-run robot setup flow
+- RoboClaw asks for missing facts instead of assuming them
+- RoboClaw asks questions in a way that a normal user can follow
+- RoboClaw does not require the user to understand the internal code structure first
+
+If RoboClaw starts guiding you through device information, connection details, sensors, or runtime environment, the embodied entry path is working.
+
+After continuing the conversation, you can check:
 
 ```bash
 find ~/.roboclaw/workspace/embodied -maxdepth 3 -type f | sort
 git status --short
 ```
 
-你要检查：
+Check that:
 
-- `~/.roboclaw/workspace/embodied/` 下面开始出现新的文件
-- RoboClaw 没有把这些接入内容直接写回仓库源码
+- new files start appearing under `~/.roboclaw/workspace/embodied/`
+- RoboClaw does not write setup-specific content back into the framework source tree
 
-理想状态是：
+The ideal outcome is:
 
-- 用户只描述自己的目标
-- RoboClaw 自己遵守 framework / workspace 的边界
+- the user only describes the goal
+- RoboClaw keeps the framework/workspace boundary intact
 
 ## 8. Step 7: Verify That Embodied Assets Are Organized Correctly
 
-你不需要一次性生成所有资产，但至少要验证路径语义是对的。
+You do not need every asset to be complete in one pass, but you should verify that the directory semantics are correct.
 
-重点检查这些目录是否被正确使用：
+Pay attention to these paths:
 
 ```text
 ~/.roboclaw/workspace/embodied/intake/
@@ -218,54 +218,53 @@ git status --short
 ~/.roboclaw/workspace/embodied/simulators/
 ```
 
-你要验证：
+Check that:
 
-- intake 信息先进入 `intake/`
-- robot/sensor/setup 资产被写入语义正确的目录
-- 目录结构没有混乱到看不出边界
+- intake facts land in `intake/` first
+- robot, sensor, and setup assets are written into the right semantic directories
+- the resulting layout is understandable and maintainable
 
-这一步的目标不是验证“内容已经完美”，而是验证“这条路径是可维护、可继续扩展的”。
+The goal here is not to prove that every asset is perfect. The goal is to verify that the path is structured well enough to extend.
 
 ## 9. Step 8: If You Have a Real Robot or Simulator, Test the Embodied Flow
 
-只有在你已经具备真实本体或仿真环境时，才进入这一段。
+Only continue with this section if you actually have a real embodiment or simulator available.
 
-如果这一步里 RoboClaw 判断本机还没有 ROS2，不要让它临场自由发挥安装教程。  
-应当让它读取并遵循仓库里的这份文档：
+If RoboClaw detects that ROS2 is not installed, do not let it improvise an installation guide. It should read and follow:
 
 ```text
 roboclaw/templates/embodied/guides/ROS2_INSTALL.md
 ```
 
-目标是：
+The goal is to:
 
-- 优先走受支持的平台安装路径
-- 优先走 Ubuntu binary install，而不是一上来就 source build
-- 把安装结果和 ROS2 distro 记录进 intake / workspace
-- 安装完成后再继续 deployment / adapter 生成
+- prefer a supported platform-specific installation path
+- prefer Ubuntu binary installation before source builds
+- record the ROS2 result and distro into intake or workspace assets
+- continue to deployment and adapter generation only after ROS2 is ready
 
-这里开始验证第一个版图的核心目标：
+This is where the core first-plane goal starts to matter:
 
-- 连接
-- 校准
-- 移动
+- connect
+- calibrate
+- move
 - debug
-- 复位
+- reset
 
 ### 9.1 Connect
 
-让 RoboClaw 帮你进入连接流程，例如：
+For example:
 
 ```bash
 roboclaw agent -m "Connect my robot and tell me what information is still missing."
 ```
 
-你要验证：
+Check that:
 
-- RoboClaw 能识别当前是 `real` 还是 `sim`
-- RoboClaw 能识别本体类型
-- 如果信息不完整，它会先补问，而不是假设
-- 如果失败，失败原因可读
+- RoboClaw can distinguish `real` from `sim`
+- RoboClaw can identify the embodiment type
+- if information is incomplete, it asks instead of guessing
+- failure reasons are readable
 
 ### 9.2 Calibrate
 
@@ -273,10 +272,10 @@ roboclaw agent -m "Connect my robot and tell me what information is still missin
 roboclaw agent -m "Calibrate this robot if calibration is supported. If not, explain why."
 ```
 
-你要验证：
+Check that:
 
-- RoboClaw 能区分“支持 calibration”和“不支持 calibration”
-- 不支持时不会瞎编流程
+- RoboClaw can distinguish between supported and unsupported calibration flows
+- when calibration is not supported, it does not invent a fake procedure
 
 ### 9.3 Move
 
@@ -284,11 +283,11 @@ roboclaw agent -m "Calibrate this robot if calibration is supported. If not, exp
 roboclaw agent -m "Do one minimal safe movement for verification."
 ```
 
-你要验证：
+Check that:
 
-- RoboClaw 会优先选择最小安全动作
-- 它能清楚说明动作意图
-- 失败时能说清是 setup、ROS2、adapter 还是安全限制问题
+- RoboClaw prefers the smallest safe motion first
+- the movement intent is explained clearly
+- on failure, it can say whether the issue is setup, ROS2, adapter, or safety related
 
 ### 9.4 Debug
 
@@ -296,10 +295,10 @@ roboclaw agent -m "Do one minimal safe movement for verification."
 roboclaw agent -m "Debug the current setup and summarize the most likely blocking issue."
 ```
 
-你要验证：
+Check that:
 
-- RoboClaw 能输出可读的 debug 结果
-- debug 不是泛泛而谈，而是能定位到具体层
+- RoboClaw produces readable debug output
+- the debug result points to a concrete layer, not generic filler
 
 ### 9.5 Reset
 
@@ -307,34 +306,34 @@ roboclaw agent -m "Debug the current setup and summarize the most likely blockin
 roboclaw agent -m "Reset the robot to a known safe state."
 ```
 
-你要验证：
+Check that:
 
-- RoboClaw 会优先考虑安全状态
-- reset 的结果或失败位置是清楚的
+- RoboClaw prioritizes a safe state
+- the reset result or failure point is clear
 
 ## 10. What to Record During Validation
 
-每次验证都建议记录这几类信息：
+For each validation run, it is helpful to record:
 
-- 当前命令
-- 当前本体类型
-- 当前是 `real` 还是 `sim`
-- 当前 provider / model 状态
-- 当前生成了哪些 workspace 文件
-- 当前失败点是在安装、初始化、workspace、agent、ROS2、adapter 还是具体本体流程
+- the command you ran
+- the embodiment type
+- whether the target is `real` or `sim`
+- the current provider and model state
+- which workspace files were generated
+- whether the failure point is installation, initialization, workspace, agent, ROS2, adapter, or the embodiment-specific flow
 
 ## 11. Final Pass Criteria
 
-当下面这些都成立时，才可以说这次 PR 的核心功能基本可用：
+The core path is in acceptable shape only when all of the following are true:
 
-- [ ] `pip install -e ".[dev]"` 成功
-- [ ] `roboclaw onboard` 成功
-- [ ] `roboclaw status` 成功
-- [ ] `roboclaw agent -m "hello"` 成功
-- [ ] RoboClaw 能把具身 setup 写到 `~/.roboclaw/workspace/embodied/`
-- [ ] RoboClaw 没有直接污染 framework 源码
-- [ ] 如果有真实本体或仿真，RoboClaw 至少能进入 `connect` 流程并给出合理反馈
+- [ ] `pip install -e ".[dev]"` succeeds
+- [ ] `roboclaw onboard` succeeds
+- [ ] `roboclaw status` succeeds
+- [ ] `roboclaw agent -m "hello"` succeeds
+- [ ] RoboClaw can write embodied setup assets into `~/.roboclaw/workspace/embodied/`
+- [ ] RoboClaw does not directly pollute framework source files
+- [ ] if a real robot or simulator is available, RoboClaw can at least enter the `connect` flow and return a reasonable result
 
-如果前四项都成立，但后面不成立，说明 RoboClaw 基础启动链路是通的，但具身入口链路还不够强。
+If the first four items pass but the later ones fail, the basic startup path works but the embodied entry path is still not strong enough.
 
-如果前四项都不稳定，这个 PR 还不能作为对外展示的首跑流程。
+If the first four items are unstable, the PR is not yet ready as a first-run external demo path.
