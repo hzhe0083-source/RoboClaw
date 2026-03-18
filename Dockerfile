@@ -39,7 +39,7 @@ RUN apt-get update && \
     rm -f /tmp/get-pip.py && \
     rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install --no-cache-dir --upgrade pip uv
+RUN python -m pip install --no-cache-dir --upgrade pip
 
 RUN if [ "${ROBOCLAW_INSTALL_ROS2}" = "1" ]; then \
       locale-gen en_US en_US.UTF-8 && \
@@ -63,7 +63,7 @@ WORKDIR /app
 # Install Python dependencies first (cached layer)
 COPY pyproject.toml README.md LICENSE ./
 RUN mkdir -p roboclaw bridge && touch roboclaw/__init__.py && \
-    uv pip install --system --no-cache . && \
+    python -m pip install --no-cache-dir . && \
     if [ "${ROBOCLAW_INSTALL_ROS2}" = "1" ]; then \
       /usr/bin/python3 -m venv /opt/roboclaw-ros2-venv && \
       /opt/roboclaw-ros2-venv/bin/python -m ensurepip --upgrade && \
@@ -75,7 +75,7 @@ RUN mkdir -p roboclaw bridge && touch roboclaw/__init__.py && \
 # Copy the full source and install
 COPY roboclaw/ roboclaw/
 COPY bridge/ bridge/
-RUN uv pip install --system --no-cache . && \
+RUN python -m pip install --no-cache-dir . && \
     if [ "${ROBOCLAW_INSTALL_ROS2}" = "1" ]; then \
       /opt/roboclaw-ros2-venv/bin/python -m pip install --no-cache-dir .; \
     fi
