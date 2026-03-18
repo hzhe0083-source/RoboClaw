@@ -139,3 +139,33 @@ If you want to be an active contributor, please contact us by emailing bozhaonan
 ## 🙏 Acknowledgments
 
 RoboClaw references and inherits part of its initial thinking from [nanobot](https://github.com/HKUDS/nanobot). We appreciate its lightweight practice along the OpenClaw line, which helped us build the first prototype faster and continue evolving toward embodied intelligence.
+
+## Community Channels
+
+- WeChat official post: [Coming Soon](https://evorl.example.com/wechat-post)
+- Documentation: [README.md](./README.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [INSTALLATION.md](./INSTALLATION.md)
+- GitHub Issues: [Create an issue](https://github.com/MINT-SJTU/RoboClaw/issues)
+- Email: business@evomind-tech.com
+- WeChat group QR code:
+
+<p align="center">
+  <img alt="EvoMind WeChat QR" src="https://raw.githubusercontent.com/MINT-SJTU/Evo-RL/main/website/assets/images/rlgroup.jpg" width="220"/>
+</p>
+
+## Affiliations
+
+<p align="center">
+  <img alt="SJTU community visual" src="https://raw.githubusercontent.com/MINT-SJTU/Evo-RL/main/website/assets/images/sjtu.png" height="68"/>
+  <img alt="EvoMind" src="https://raw.githubusercontent.com/MINT-SJTU/Evo-RL/main/website/assets/images/evomind1.png" height="60"/>
+</p>
+
+## Citation
+
+```bibtex
+@misc{roboclaw2026,
+  title        = {RoboClaw: An Open-Source Embodied Intelligence Assistant Framework},
+  author       = {RoboClaw Contributors},
+  year         = {2026},
+  howpublished = {\url{https://github.com/MINT-SJTU/RoboClaw}}
+}
+```
