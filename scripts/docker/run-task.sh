@@ -20,6 +20,8 @@ ensure_instance_dir "${INSTANCE}" "${PROFILE}"
 configure_proxy_env
 prepare_auth_mounts "${INSTANCE}" "${PROFILE}"
 prepare_instance_calibration "${INSTANCE}" "${PROFILE}"
+AUTH_PATH="$(host_codex_auth_path || true)"
+OAUTH_CLI_KIT_AUTH_DIR="$(host_oauth_cli_kit_auth_dir || true)"
 
 if [ "$#" -eq 0 ]; then
   set -- status
