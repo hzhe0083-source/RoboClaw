@@ -14,6 +14,17 @@ from roboclaw.agent.tools.registry import ToolRegistry
 from roboclaw.bus.queue import MessageBus
 from roboclaw.config.loader import CONFIG_PATH_ENV
 from roboclaw.embodied.execution.integration.transports.ros2 import canonical_ros2_namespace
+from roboclaw.embodied.execution.integration.control_surfaces.ros2.so101_feetech import (
+    ADDR_HOMING_OFFSET,
+    ADDR_LOCK,
+    ADDR_MAX_POSITION_LIMIT,
+    ADDR_MIN_POSITION_LIMIT,
+    ADDR_OPERATING_MODE,
+    ADDR_TORQUE_ENABLE,
+    POSITION_MODE,
+    SERVO_RESOLUTION_MAX,
+    So101CalibrationMonitor,
+)
 from roboclaw.embodied.execution.orchestration.procedures.model import ProcedureKind
 from roboclaw.embodied.execution.orchestration.runtime.executor import ProcedureExecutionResult, ProcedureExecutor
 from roboclaw.embodied.execution.orchestration.runtime.manager import RuntimeManager
@@ -734,6 +745,37 @@ async def test_calibrate_allows_overwriting_existing_file(tmp_path: Path, monkey
     assert "overwrite the existing calibration file" in prompt.message
     assert str(calibration_path) in prompt.message
     assert executor.calibration_phase(context.runtime.id) == "await_mid_pose_ack"
+
+
+def test_prepare_manual_calibration_resets_homing_and_limits() -> None:
+    calls: list[tuple[str, int, int, int]] = []
+
+    class FakeBus:
+        def write_byte(self, servo_id: int, address: int, value: int) -> None:
+            calls.append(("byte", servo_id, address, value))
+
+        def write_word(self, servo_id: int, address: int, value: int) -> None:
+            calls.append(("word", servo_id, address, value))
+
+    monitor = So101CalibrationMonitor(device_by_id="/dev/serial/by-id/fake")
+    monitor._bus = FakeBus()  # type: ignore[assignment]
+    monitor._mid_pose_raw = {"shoulder_pan": 1}
+    monitor._homing_offsets = {"shoulder_pan": 2}
+    monitor._observed_mins = {"shoulder_pan": 3}
+    monitor._observed_maxs = {"shoulder_pan": 4}
+
+    monitor.prepare_manual_calibration()
+
+    assert ("byte", 1, ADDR_LOCK, 0) in calls
+    assert ("byte", 1, ADDR_TORQUE_ENABLE, 0) in calls
+    assert ("byte", 1, ADDR_OPERATING_MODE, POSITION_MODE) in calls
+    assert ("word", 1, ADDR_HOMING_OFFSET, 0) in calls
+    assert ("word", 1, ADDR_MIN_POSITION_LIMIT, 0) in calls
+    assert ("word", 1, ADDR_MAX_POSITION_LIMIT, SERVO_RESOLUTION_MAX) in calls
+    assert monitor._mid_pose_raw == {}
+    assert monitor._homing_offsets == {}
+    assert monitor._observed_mins == {}
+    assert monitor._observed_maxs == {}
 
 
 @pytest.mark.asyncio

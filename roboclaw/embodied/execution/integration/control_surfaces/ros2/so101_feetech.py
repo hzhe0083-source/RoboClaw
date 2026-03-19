@@ -351,11 +351,18 @@ class So101CalibrationMonitor:
             raise RuntimeError("Calibration monitor is not connected.")
         for servo_id in DEFAULT_SERVO_IDS.values():
             try:
-                self._bus.write_byte(servo_id, ADDR_TORQUE_ENABLE, 0)
                 self._bus.write_byte(servo_id, ADDR_LOCK, 0)
+                self._bus.write_byte(servo_id, ADDR_TORQUE_ENABLE, 0)
                 self._bus.write_byte(servo_id, ADDR_OPERATING_MODE, POSITION_MODE)
+                self._bus.write_word(servo_id, ADDR_HOMING_OFFSET, 0)
+                self._bus.write_word(servo_id, ADDR_MIN_POSITION_LIMIT, 0)
+                self._bus.write_word(servo_id, ADDR_MAX_POSITION_LIMIT, SERVO_RESOLUTION_MAX)
             except Exception:
                 continue
+        self._mid_pose_raw = {}
+        self._homing_offsets = {}
+        self._observed_mins = {}
+        self._observed_maxs = {}
 
     def capture_mid_pose(self) -> dict[str, int]:
         if self._bus is None:
