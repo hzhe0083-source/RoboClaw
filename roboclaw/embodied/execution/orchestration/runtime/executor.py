@@ -18,7 +18,7 @@ from roboclaw.embodied.execution.integration.adapters.loader import AdapterLoade
 from roboclaw.embodied.execution.integration.carriers.model import ExecutionTarget
 from roboclaw.embodied.execution.orchestration.procedures.model import ProcedureKind
 from roboclaw.embodied.execution.orchestration.runtime.manager import RuntimeManager
-from roboclaw.embodied.execution.orchestration.runtime.model import RuntimeSession, RuntimeStatus
+from roboclaw.embodied.execution.orchestration.runtime.model import CalibrationPhase, RuntimeSession, RuntimeStatus
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ class So101CalibrationFlow:
 
     monitor: Any
     calibration_path: Path
-    phase: str
+    phase: CalibrationPhase
     interval_s: float
     heartbeat_s: float
     sample_limit: int | None
@@ -413,9 +413,9 @@ class ProcedureExecutor:
                     zh="这个 setup 当前没有待继续的标定流程。请先告诉我开始标定。",
                 ),
             )
-        if flow.phase == "await_mid_pose_ack":
+        if flow.phase == CalibrationPhase.AWAIT_MID_POSE_ACK:
             return await self._start_so101_calibration_stream(context, flow=flow, on_progress=on_progress)
-        if flow.phase == "streaming":
+        if flow.phase == CalibrationPhase.STREAMING:
             return await self._finish_so101_calibration(context, flow=flow)
         self._cleanup_so101_calibration_flow(context.runtime.id)
         return ProcedureExecutionResult(
@@ -513,7 +513,7 @@ class ProcedureExecutor:
             self._so101_calibration_flows[context.runtime.id] = So101CalibrationFlow(
                 monitor=monitor,
                 calibration_path=calibration_path,
-                phase="await_mid_pose_ack",
+                phase=CalibrationPhase.AWAIT_MID_POSE_ACK,
                 interval_s=interval_s,
                 heartbeat_s=heartbeat_s,
                 sample_limit=sample_limit,
@@ -542,7 +542,7 @@ class ProcedureExecutor:
         context.runtime.last_error = None
         return self._so101_calibration_phase_message(
             context,
-            phase="await_mid_pose_ack",
+            phase=CalibrationPhase.AWAIT_MID_POSE_ACK,
             calibration_path=calibration_path,
             overwrite_existing=overwrite_existing,
         )
@@ -558,12 +558,12 @@ class ProcedureExecutor:
         self,
         context: ExecutionContext,
         *,
-        phase: str,
+        phase: str | CalibrationPhase,
         calibration_path: Path,
         overwrite_existing: bool = False,
     ) -> ProcedureExecutionResult:
         expected_path = str(calibration_path)
-        if phase == "await_mid_pose_ack":
+        if phase == CalibrationPhase.AWAIT_MID_POSE_ACK:
             save_notice = (
                 localize_text(
                     self._preferred_language(context),
@@ -595,7 +595,7 @@ class ProcedureExecutor:
                 ),
                 details={"calibration_path": expected_path, "calibration_phase": phase},
             )
-        if phase == "streaming":
+        if phase == CalibrationPhase.STREAMING:
             return ProcedureExecutionResult(
                 procedure=ProcedureKind.CALIBRATE,
                 ok=False,
@@ -637,7 +637,7 @@ class ProcedureExecutor:
             flow.monitor.apply_half_turn_homings(mid_pose)
             initial_snapshot = flow.monitor.start_observation()
             flow.stop_event = asyncio.Event()
-            flow.phase = "streaming"
+            flow.phase = CalibrationPhase.STREAMING
             if on_progress is not None:
                 await on_progress(self._format_so101_calibration_snapshot(initial_snapshot, sample_idx=1))
                 flow.next_sample_idx = 2

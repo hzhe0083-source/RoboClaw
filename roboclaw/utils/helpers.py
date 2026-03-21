@@ -36,6 +36,15 @@ def safe_filename(name: str) -> str:
     return _UNSAFE_CHARS.sub("_", name).strip()
 
 
+def strip_code_fences(text: str) -> str:
+    """Strip leading/trailing markdown code fences (```json ... ```)."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:\w+)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
 def split_message(content: str, max_len: int = 2000) -> list[str]:
     """
     Split content into chunks within max_len, preferring line breaks.

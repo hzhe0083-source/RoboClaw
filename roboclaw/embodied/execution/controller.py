@@ -16,6 +16,7 @@ from roboclaw.embodied.execution.orchestration.runtime.executor import (
     ProcedureExecutionResult,
     ProcedureExecutor,
 )
+from roboclaw.embodied.execution.orchestration.runtime.model import CalibrationPhase
 from roboclaw.embodied.execution.orchestration.runtime.manager import RuntimeManager
 from roboclaw.embodied.onboarding import SETUP_STATE_KEY, SetupOnboardingState, SetupStage, SetupStatus
 from roboclaw.embodied.onboarding.model import PREFERRED_LANGUAGE_KEY
@@ -181,7 +182,7 @@ class EmbodiedExecutionController:
         normalized = " ".join(content.strip().lower().split())
         return any(token in normalized for token in cls._CALIBRATION_REQUEST_HINTS)
 
-    def looks_like_embodied_request(self, content: str) -> bool:
+    def looks_like_embodied_request(self, content: str, catalog: Any | None = None) -> bool:
         """Best-effort embodied intent detector for onboarding interception only."""
         normalized = " ".join(content.strip().lower().split())
         if not normalized:
@@ -190,10 +191,11 @@ class EmbodiedExecutionController:
         if any(token in normalized for token in self._GENERIC_HINTS):
             return True
 
-        try:
-            catalog = build_catalog(self.workspace)
-        except Exception:
-            catalog = build_catalog()
+        if catalog is None:
+            try:
+                catalog = build_catalog(self.workspace)
+            except Exception:
+                catalog = build_catalog()
 
         for robot in catalog.robots.list():
             if robot.id.lower() in normalized or robot.name.lower() in normalized:
@@ -236,7 +238,7 @@ class EmbodiedExecutionController:
             session.add_message("assistant", content)
             return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=msg.metadata or {})
 
-        context = self._build_context(session, setup)
+        context = self._build_context(session, setup, catalog=catalog)
         self._bind_active_setup(session, setup.setup_id)
         runtime_phase = self.executor.calibration_phase(context.runtime.id)
         if calibration_state and runtime_phase is None:
@@ -274,7 +276,7 @@ class EmbodiedExecutionController:
             )
         else:
             phase = self.executor.calibration_phase(context.runtime.id) or str(calibration_state.get("phase") or "")
-            if phase == "await_mid_pose_ack":
+            if phase == CalibrationPhase.AWAIT_MID_POSE_ACK:
                 message = localize_text(
                     context.preferred_language,
                     en=(
@@ -322,9 +324,11 @@ class EmbodiedExecutionController:
         session: Session,
         *,
         setup_id: str | None = None,
+        catalog: Any | None = None,
     ) -> EmbodiedAgentSnapshot:
         """Build the current embodied snapshot for LLM context/tool use."""
-        catalog = build_catalog(self.workspace)
+        if catalog is None:
+            catalog = build_catalog(self.workspace)
         setup, _, candidates = self._resolve_setup(session, catalog, explicit_setup_id=setup_id)
         candidate_summaries = tuple(self._candidate_summary(catalog, item) for item in candidates)
         selected = self._selected_setup_payload(session, catalog, setup)
@@ -402,7 +406,7 @@ class EmbodiedExecutionController:
                 details={},
             )
 
-        context = self._build_context(session, setup)
+        context = self._build_context(session, setup, catalog=catalog)
         self._bind_active_setup(session, setup.setup_id)
         if on_progress:
             await on_progress(f"Embodied action routed to setup `{setup.setup_id}`.")
@@ -540,8 +544,9 @@ class EmbodiedExecutionController:
             "calibration_present": calibration_path.exists() if calibration_path is not None else None,
         }
 
-    def _build_context(self, session: Session, setup: ResolvedSetup) -> ExecutionContext:
-        catalog = build_catalog(self.workspace)
+    def _build_context(self, session: Session, setup: ResolvedSetup, catalog: Any | None = None) -> ExecutionContext:
+        if catalog is None:
+            catalog = build_catalog(self.workspace)
         assembly = catalog.assemblies.get(setup.assembly_id)
         deployment = catalog.deployments.get(setup.deployment_id)
         adapter_binding = catalog.adapters.get(setup.adapter_id)
@@ -741,7 +746,7 @@ class EmbodiedExecutionController:
         result: ProcedureExecutionResult,
     ) -> None:
         phase = str(result.details.get("calibration_phase") or "").strip()
-        if phase in {"await_mid_pose_ack", "streaming"}:
+        if phase in {CalibrationPhase.AWAIT_MID_POSE_ACK, CalibrationPhase.STREAMING}:
             session.metadata[EMBODIED_CALIBRATION_STATE_KEY] = {
                 "setup_id": setup_id,
                 "runtime_id": runtime_id,

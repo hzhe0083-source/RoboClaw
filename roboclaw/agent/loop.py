@@ -23,6 +23,7 @@ from roboclaw.agent.tools.shell import ExecTool
 from roboclaw.agent.tools.spawn import SpawnTool
 from roboclaw.agent.tools.web import WebFetchTool, WebSearchTool
 from roboclaw.bus.events import InboundMessage, OutboundMessage
+from roboclaw.embodied.catalog import build_catalog
 from roboclaw.embodied.execution.controller import EmbodiedExecutionController
 from roboclaw.embodied.execution.tools import EmbodiedControlTool, EmbodiedStatusTool
 from roboclaw.embodied.execution.orchestration.runtime import RuntimeManager
@@ -32,6 +33,7 @@ from roboclaw.embodied.onboarding import OnboardingController
 from roboclaw.embodied.onboarding.model import PREFERRED_LANGUAGE_KEY, OnboardingIntent
 from roboclaw.providers.base import LLMProvider
 from roboclaw.session.manager import Session, SessionManager
+from roboclaw.utils.helpers import strip_code_fences
 
 if TYPE_CHECKING:
     from roboclaw.config.schema import ChannelsConfig, ExecToolConfig
@@ -192,9 +194,9 @@ class AgentLoop:
             if hasattr(tool, "set_context"):
                 tool.set_context(session, on_progress)
 
-    def _embodied_runtime_context(self, session: Session) -> str:
+    def _embodied_runtime_context(self, session: Session, catalog: Any | None = None) -> str:
         """Render the current embodied snapshot into runtime metadata."""
-        snapshot = self.embodied_execution.build_agent_snapshot(session)
+        snapshot = self.embodied_execution.build_agent_snapshot(session, catalog=catalog)
         language = choose_language(session.metadata.get(PREFERRED_LANGUAGE_KEY))
         return (
             f"Preferred Response Language: {language}\n"
@@ -268,10 +270,7 @@ class AgentLoop:
         raw = self._strip_think(response.content) or ""
         if not raw:
             return None
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```(?:json)?\s*", "", raw)
-            raw = re.sub(r"\s*```$", "", raw)
+        raw = strip_code_fences(raw)
         try:
             payload = json.loads(raw)
         except Exception:
@@ -581,11 +580,12 @@ class AgentLoop:
             self.sessions.save(session)
             return response
 
-        snapshot = self.embodied_execution.build_agent_snapshot(session)
+        catalog = build_catalog(self.workspace)
+        snapshot = self.embodied_execution.build_agent_snapshot(session, catalog=catalog)
         if (
             snapshot.selected_setup_id is None
             and not snapshot.candidates
-            and self.embodied_execution.looks_like_embodied_request(msg.content)
+            and self.embodied_execution.looks_like_embodied_request(msg.content, catalog=catalog)
         ):
             response = await self.onboarding.handle_message(
                 msg,
@@ -602,7 +602,7 @@ class AgentLoop:
             media=msg.media if msg.media else None,
             channel=msg.channel,
             chat_id=msg.chat_id,
-            extra_runtime_context=self._embodied_runtime_context(session),
+            extra_runtime_context=self._embodied_runtime_context(session, catalog=catalog),
         )
 
         final_content, _, all_msgs = await self._run_agent_loop(
