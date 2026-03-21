@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import mimetypes
+import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from roboclaw.embodied.execution.orchestration.skills import SkillSpec
-from roboclaw.embodied.execution.orchestration.supervision import record_episode
 
 if TYPE_CHECKING:
     from roboclaw.embodied.execution.orchestration.runtime.executor import ExecutionContext, ProcedureExecutor
@@ -34,6 +35,26 @@ class CollectionResult:
     episodes_failed: int
     message: str
 
+
+async def capture_sensors(
+    adapter: Any, assembly: Any, output_dir: Path | None, episode_id: int, step_idx: int
+) -> list[dict[str, Any]]:
+    if not (sensors := getattr(assembly, "sensors", ()) or ()) or not hasattr(adapter, "capture_sensor"):
+        return []
+    captures = []
+    for sensor in sensors:
+        result = await adapter.capture_sensor(sensor.sensor_id)
+        path_or_ref = result.payload_ref
+        source = Path(result.payload_ref) if result.payload_ref else None
+        if output_dir is not None and result.captured and source and source.is_file():
+            ext = source.suffix or mimetypes.guess_extension(result.media_type or "") or ".bin"
+            path = output_dir / "frames" / f"{episode_id}_{step_idx}_{sensor.sensor_id}{ext}"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, path)
+            path_or_ref = str(path)
+        captures.append({"sensor_id": result.sensor_id, "captured": result.captured, "media_type": result.media_type, "path_or_ref": path_or_ref})
+    return captures
+
 async def collect_episodes(
     executor: ProcedureExecutor,
     context: ExecutionContext,
@@ -43,6 +64,8 @@ async def collect_episodes(
     on_progress: ProgressCallback | None = None,
     supervisor: EpisodeSupervisor | None = None,
 ) -> CollectionResult:
+    from roboclaw.embodied.execution.orchestration.supervision import record_episode
+
     output_dir.mkdir(parents=True, exist_ok=True)
     dataset_path = output_dir / "dataset.jsonl"
     completed = 0
@@ -53,7 +76,7 @@ async def collect_episodes(
         if supervisor is None:
             reset_result = await executor.execute_reset(context)
             record_data = (
-                await record_episode(executor, context, skill, episode_id, on_progress=on_progress)
+                await record_episode(executor, context, skill, episode_id, output_dir=output_dir, on_progress=on_progress)
                 if reset_result.ok
                 else {"episode_id": episode_id, "skill_name": skill.name, "steps": [], "ok": False}
             )
@@ -61,7 +84,7 @@ async def collect_episodes(
             retries = 0
             while True:
                 record_data, verdict = await supervisor.supervise_episode(
-                    executor, context, skill, episode_id, on_progress=on_progress
+                    executor, context, skill, episode_id, output_dir=output_dir, on_progress=on_progress
                 )
                 if not verdict.should_retry or retries >= 2:
                     break
