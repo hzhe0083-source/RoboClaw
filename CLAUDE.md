@@ -26,7 +26,7 @@
 - [x] 1. 摄像头组合：本体 + 摄像头在 assembly 中绑定，实时取图，数据可录入 episode ✅
 - [x] 2. 数据采集格式：借鉴 LeRobot dataset 范式，实现带图像的 episode 录制格式（依赖 #1） ✅
 - [x] 3. 数据采集 GUI：采集时自动启动 HTTP 可视化界面（摄像头画面 + episode 进度 + 关节状态），借鉴 LeRobot，映射端口供远程浏览器访问 ✅
-- [ ] 4. ACT 训练 recipe：借鉴 LeRobot ACT 实现，作为第一个内置可训练 policy（依赖 #2）
+- [x] 4. ACT 训练 recipe：借鉴 LeRobot ACT 实现，作为第一个内置可训练 policy（依赖 #2） ✅
 - [x] 5. Layer 2 能力查询接口：从 primitive 的 CapabilityFamily 自动聚合本体能力，Agent 可查询 ✅
 - [ ] 6. 接入 PiperX 作为第二个 builtin 本体，参考 Evo-RL（GitHub），验证框架泛化（依赖 #5）
 - [ ] 7. 验收测试（见 `docs/acceptance-test.md`）：A1 夹爪开合 / A4 仿真体验 / A6 采集 10 episode / A7 训练 ACT policy
