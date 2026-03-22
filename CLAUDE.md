@@ -26,8 +26,8 @@
 ### 当前批次
 
 - [ ] 1. Schema 精简：删除 ControlGroups、SafetyZones、SafetyBoundaries、ResourceOwnership、FailureDomains、CompensationSpec、IdempotencyMode；简化 Procedure 系统（去掉补偿/回滚/幂等）
-- [ ] 2. 获取 SO101 URDF 模型：从 LeRobot 或官方获取，放入 `simulation/models/so101.urdf`
-- [ ] 3. A4 仿真验收：没有硬件，对话进入仿真，虚拟臂运动（依赖 #2）
+- [x] 2. ✅ 获取 SO101 URDF/MJCF 模型：已放入 `simulation/models/so101.urdf` + `so101_sim.xml`，含 STL mesh
+- [x] 3. ✅ A4 仿真验收：对话进入仿真，网页 viewer 可视化，夹爪开合动作已验证（2026-03-22，Ubuntu 22.04 + 24.04 双容器通过）
 - [ ] 4. A1 夹爪验收：在 4090-zhaobo 上对话控制 SO101 夹爪开合，摄像头确认。Agent 已可对话，需排查 ROS2 控制面启动问题
 - [ ] 5. A6 采集验收：对话引导采集 10 episode（依赖 #4）
 - [ ] 6. A7 训练验收：对话选算法、训练 ACT、checkpoint 保存（依赖 #5）

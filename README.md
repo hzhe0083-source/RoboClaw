@@ -24,22 +24,94 @@ RoboClaw is being built around four planes:
 
 Right now, we are concentrated on the first plane.
 
-```text
-Overall Data Flow
+```mermaid
+graph TB
+    subgraph UI ["🖥️ User Interface"]
+        CLI["CLI<br/><i>roboclaw agent</i>"]
+        WebUI["Web UI<br/><i>control panel</i>"]
+    end
 
-RoboClaw Agent
-  ↓
-Workspace / Catalog / Setup Resolution
-  ↓
-Procedure (connect / calibrate / move / debug / reset step graph)
-  ↓
-Runtime Adapter (active execution layer)
-  ↓
-Control Surface (interface profile + runtime server)
-  ↓
-Embodiment Runtime (hardware/sim-specific runtime)
-  ↓
-Real/Sim Embodiment
+    subgraph Channels ["📡 Channels"]
+        Discord["Discord"]
+        WeChat["WeChat"]
+        WhatsApp["WhatsApp"]
+    end
+
+    LLM["🧠 LLM<br/><i>Claude / GPT / Local</i>"]
+
+    subgraph Agent ["⚙️ Agent Runtime"]
+        Loop["Agent Loop<br/><i>conversation + tool use</i>"]
+        Memory["Memory"]
+        Tools["Tool Registry"]
+        Intent["Intent Classifier"]
+    end
+
+    subgraph Embodied ["🦾 Embodied Layer"]
+        direction TB
+        subgraph Onboard ["① Onboarding"]
+            Detect["Hardware Detection"]
+            Calibrate["Calibration"]
+            AdapterGen["Adapter Generation"]
+        end
+        subgraph Control ["② Control"]
+            Primitives["Primitives"]
+            Skills["Skill Composition"]
+            Safety["Safety Constraints"]
+        end
+        subgraph Perception ["③ Perception"]
+            Camera["Camera Manager"]
+            Stream["MJPEG Streaming"]
+            VLM["Visual Feedback"]
+        end
+        subgraph Data ["④ Data Collection"]
+            Episodes["Episode Recording"]
+            Dataset["Dataset Management"]
+            CollectGUI["Collection GUI"]
+        end
+        subgraph Training ["⑤ Training"]
+            ACT["ACT Policy"]
+            DP["Diffusion Policy"]
+            Checkpoint["Checkpoint Mgmt"]
+        end
+        subgraph Deploy ["⑥ Deployment"]
+            Inference["Policy Inference"]
+            Monitor["Supervision"]
+            SimToReal["Sim → Real"]
+        end
+    end
+
+    subgraph Transport ["🔌 Transport Layer"]
+        ROS2["ROS2"]
+        Serial["Serial<br/><i>Feetech / Dynamixel</i>"]
+        Sim["MuJoCo Simulation"]
+    end
+
+    subgraph Hardware ["🤖 Hardware"]
+        SO101["SO101 Arm"]
+        PiperX["PiperX Arm"]
+        Gripper["Gripper"]
+        Cam["USB Camera"]
+        Future["More robots..."]
+    end
+
+    UI --> Agent
+    Channels --> Agent
+    Agent <--> LLM
+    Loop --> Tools
+    Loop --> Memory
+    Loop --> Intent
+    Tools --> Embodied
+    Embodied --> Transport
+    Transport --> Hardware
+    Sim -.-> |"web viewer"| WebUI
+
+    style UI fill:#e3f2fd,stroke:#1565c0
+    style Channels fill:#fce4ec,stroke:#c62828
+    style Agent fill:#fff3e0,stroke:#e65100
+    style Embodied fill:#e8f5e9,stroke:#2e7d32
+    style Transport fill:#f3e5f5,stroke:#6a1b9a
+    style Hardware fill:#eceff1,stroke:#37474f
+    style LLM fill:#fffde7,stroke:#f57f17
 ```
 
 Current embodiment coverage is tracked like this:
