@@ -18,7 +18,7 @@ _DEFAULT_SETUP: dict[str, Any] = {
     "cameras": [],
     "calibration": {
         "status": "missing",
-        "dir": "",
+        "dir": str(Path("~/.roboclaw/workspace/embodied/calibration").expanduser()),
     },
     "datasets": {
         "root": str(Path("~/.roboclaw/workspace/embodied/datasets").expanduser()),
