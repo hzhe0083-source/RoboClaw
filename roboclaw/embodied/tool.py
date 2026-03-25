@@ -1,6 +1,7 @@
 """Embodied tool — bridges agent to the embodied robotics layer."""
 
 import json
+import re
 import shutil
 import sys
 from contextlib import contextmanager
@@ -75,6 +76,11 @@ class EmbodiedTool(Tool):
                 "task": {
                     "type": "string",
                     "description": "Task description for recording.",
+                },
+                "use_cameras": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether recording should include configured cameras.",
                 },
                 "num_episodes": {
                     "type": "integer",
@@ -356,8 +362,11 @@ class EmbodiedTool(Tool):
             return _NO_TTY_MSG
         controller = SO101Controller()
         followers, leaders, mode = resolved["followers"], resolved["leaders"], resolved["mode"]
-        cameras = self._resolve_cameras(setup)
         dataset_name = kwargs.get("dataset_name", "default")
+        error = _validate_dataset_name(dataset_name)
+        if error:
+            return error
+        cameras = {} if kwargs.get("use_cameras") is False else self._resolve_cameras(setup)
         record_kwargs = {
             "cameras": cameras,
             "repo_id": f"local/{dataset_name}",
@@ -397,6 +406,9 @@ class EmbodiedTool(Tool):
         from roboclaw.embodied.runner import LocalLeRobotRunner
 
         dataset_name = kwargs.get("dataset_name", "default")
+        error = _validate_dataset_name(dataset_name)
+        if error:
+            return error
         dataset_root = setup.get("datasets", {}).get("root", "")
         policies_root = setup.get("policies", {}).get("root", "")
         argv = ACTPipeline().train(
@@ -419,7 +431,7 @@ class EmbodiedTool(Tool):
         if not followers:
             return "No follower arm configured."
         follower = followers[0]
-        cameras = self._resolve_cameras(setup)
+        cameras = {} if kwargs.get("use_cameras") is False else self._resolve_cameras(setup)
         policies_root = setup.get("policies", {}).get("root", "")
         checkpoint = kwargs.get("checkpoint_path") or ACTPipeline().checkpoint_path(policies_root)
         argv = SO101Controller().run_policy(
@@ -567,6 +579,15 @@ def _arm_id(arm: dict) -> str:
     if not arm_id:
         raise ValueError(f"Arm '{arm.get('alias', 'unknown')}' has no serial-based calibration_dir.")
     return arm_id
+
+
+_DATASET_SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+
+def _validate_dataset_name(dataset_name: str) -> str | None:
+    if not dataset_name or not _DATASET_SLUG_RE.match(dataset_name):
+        return "dataset_name must be a non-empty ASCII slug (letters, numbers, underscores, hyphens)."
+    return None
 
 
 @contextmanager

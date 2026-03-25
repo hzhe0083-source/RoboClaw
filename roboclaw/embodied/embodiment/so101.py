@@ -86,16 +86,18 @@ class SO101Controller:
         fps: int = 30, num_episodes: int = 10,
     ) -> list[str]:
         """Build recording command (follower + leader + cameras + dataset)."""
-        return [
-            "lerobot-record",
-            *self._arm_args("robot", robot_type, robot_port, robot_cal_dir, robot_id),
-            *self._arm_args("teleop", teleop_type, teleop_port, teleop_cal_dir, teleop_id),
-            f"--robot.cameras={json.dumps(cameras)}",
+        argv = ["lerobot-record"]
+        argv.extend(self._arm_args("robot", robot_type, robot_port, robot_cal_dir, robot_id))
+        argv.extend(self._arm_args("teleop", teleop_type, teleop_port, teleop_cal_dir, teleop_id))
+        if cameras:
+            argv.append(f"--robot.cameras={json.dumps(cameras)}")
+        argv.extend([
             f"--dataset.repo_id={repo_id}",
             f"--dataset.single_task={task}",
             f"--dataset.fps={fps}",
             f"--dataset.num_episodes={num_episodes}",
-        ]
+        ])
+        return argv
 
     def record_bimanual(
         self,
@@ -113,8 +115,7 @@ class SO101Controller:
             "--robot.type=bi_so_follower",
             f"--robot.id={robot_id}",
             f"--robot.calibration_dir={Path(robot_cal_dir).expanduser()}",
-            *self._bimanual_arm_args("robot", left_robot, right_robot),
-            f"--robot.cameras={json.dumps(cameras)}",
+            *self._bimanual_arm_args("robot", left_robot, right_robot, cameras),
             "--teleop.type=bi_so_leader",
             f"--teleop.id={teleop_id}",
             f"--teleop.calibration_dir={Path(teleop_cal_dir).expanduser()}",
@@ -135,14 +136,16 @@ class SO101Controller:
         num_episodes: int = 1,
     ) -> list[str]:
         """Build policy execution command (follower only, no teleop)."""
-        return [
-            "lerobot-record",
-            *self._arm_args("robot", robot_type, robot_port, robot_cal_dir, robot_id),
-            f"--robot.cameras={json.dumps(cameras)}",
+        argv = ["lerobot-record"]
+        argv.extend(self._arm_args("robot", robot_type, robot_port, robot_cal_dir, robot_id))
+        if cameras:
+            argv.append(f"--robot.cameras={json.dumps(cameras)}")
+        argv.extend([
             f"--policy.path={Path(policy_path).expanduser()}",
             f"--dataset.repo_id={repo_id}",
             f"--dataset.num_episodes={num_episodes}",
-        ]
+        ])
+        return argv
 
     def _arm_prefix(self, arm_type: str) -> str:
         if "leader" in arm_type:
@@ -161,10 +164,18 @@ class SO101Controller:
             f"--{prefix}.calibration_dir={Path(cal_dir).expanduser()}",
         ]
 
-    def _bimanual_arm_args(self, prefix: str, left: dict, right: dict) -> list[str]:
+    def _bimanual_arm_args(
+        self,
+        prefix: str,
+        left: dict,
+        right: dict,
+        cameras: dict[str, dict] | None = None,
+    ) -> list[str]:
         """Build --{prefix}.left_arm_config.* and --{prefix}.right_arm_config.* args."""
         args: list[str] = []
         for side, arm in [("left", left), ("right", right)]:
             base = f"--{prefix}.{side}_arm_config"
             args.append(f"{base}.port={arm['port']}")
+            if cameras:
+                args.append(f"{base}.cameras={json.dumps(cameras)}")
         return args

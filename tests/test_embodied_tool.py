@@ -44,6 +44,8 @@ def test_tool_schema() -> None:
     assert params["type"] == "object"
     assert "action" in params["properties"]
     assert params["required"] == ["action"]
+    assert params["properties"]["use_cameras"]["type"] == "boolean"
+    assert params["properties"]["use_cameras"]["default"] is True
 
     action_schema = params["properties"]["action"]
     assert action_schema["type"] == "string"
@@ -226,6 +228,39 @@ async def test_record_action() -> None:
 
 
 @pytest.mark.asyncio
+async def test_record_action_without_cameras() -> None:
+    tool = EmbodiedTool(tty_handoff=AsyncMock())
+    mock_runner = AsyncMock()
+    mock_runner.run_interactive.return_value = 0
+
+    with (
+        patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
+        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+    ):
+        result = await tool.execute(
+            action="record", dataset_name="test", task="grasp", num_episodes=5,
+            follower_names="right_follower", leader_names="left_leader", use_cameras=False,
+        )
+
+    assert "Recording finished" in result
+    argv = mock_runner.run_interactive.call_args[0][0]
+    assert not any("--robot.cameras=" in a for a in argv)
+
+
+@pytest.mark.asyncio
+async def test_record_action_rejects_non_ascii_dataset_name() -> None:
+    tool = EmbodiedTool(tty_handoff=AsyncMock())
+
+    with patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP):
+        result = await tool.execute(
+            action="record", dataset_name="抓取任务", task="grasp", num_episodes=5,
+            follower_names="right_follower", leader_names="left_leader",
+        )
+
+    assert "dataset_name must be" in result
+
+
+@pytest.mark.asyncio
 async def test_train_action() -> None:
     tool = EmbodiedTool()
     mock_runner = AsyncMock()
@@ -238,6 +273,16 @@ async def test_train_action() -> None:
         result = await tool.execute(action="train", dataset_name="test", steps=5000)
 
     assert "job-abc-123" in result
+
+
+@pytest.mark.asyncio
+async def test_train_action_rejects_non_ascii_dataset_name() -> None:
+    tool = EmbodiedTool()
+
+    with patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP):
+        result = await tool.execute(action="train", dataset_name="训练集", steps=5000)
+
+    assert "dataset_name must be" in result
 
 
 @pytest.mark.asyncio
@@ -652,6 +697,9 @@ async def test_record_bimanual() -> None:
     assert "--teleop.id=bimanual" in argv
     assert any(a.startswith("--robot.calibration_dir=") for a in argv)
     assert any(a.startswith("--teleop.calibration_dir=") for a in argv)
+    assert not any(a.startswith("--robot.cameras=") for a in argv)
+    assert any(a.startswith("--robot.left_arm_config.cameras=") for a in argv)
+    assert any(a.startswith("--robot.right_arm_config.cameras=") for a in argv)
     assert not any(".left_arm_config.calibration_dir=" in a for a in argv)
     assert not any(".right_arm_config.calibration_dir=" in a for a in argv)
     assert len(mock_copy.call_args_list) == 4

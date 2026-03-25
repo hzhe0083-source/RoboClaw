@@ -98,6 +98,40 @@ def test_record() -> None:
     assert "--dataset.num_episodes=5" in argv
 
 
+def test_record_skips_empty_cameras() -> None:
+    argv = SO101Controller().record(
+        "so101_follower", "/dev/ttyACM0", "/cal/f",
+        "5B14032630",
+        "so101_leader", "/dev/ttyACM1", "/cal/l",
+        "5B14030892",
+        cameras={}, repo_id="local/test_data",
+        task="pick and place", fps=30, num_episodes=5,
+    )
+    assert not any("--robot.cameras=" in a for a in argv)
+
+
+def test_record_bimanual_uses_per_arm_cameras() -> None:
+    cameras = {"front": {"type": "opencv", "index": 0}}
+    argv = SO101Controller().record_bimanual(
+        robot_id="bimanual",
+        robot_cal_dir="/cal/robot",
+        left_robot={"port": "/dev/a"},
+        right_robot={"port": "/dev/b"},
+        teleop_id="bimanual",
+        teleop_cal_dir="/cal/teleop",
+        left_teleop={"port": "/dev/c"},
+        right_teleop={"port": "/dev/d"},
+        cameras=cameras,
+        repo_id="local/test_data",
+        task="pick and place",
+        fps=30,
+        num_episodes=5,
+    )
+    assert not any(a.startswith("--robot.cameras=") for a in argv)
+    assert any(a.startswith("--robot.left_arm_config.cameras=") for a in argv)
+    assert any(a.startswith("--robot.right_arm_config.cameras=") for a in argv)
+
+
 def test_run_policy() -> None:
     cameras = {"front": {"type": "opencv", "index": 0}}
     argv = SO101Controller().run_policy(
@@ -111,6 +145,15 @@ def test_run_policy() -> None:
     assert any("--policy.path=" in a for a in argv)
     assert any("--robot.cameras=" in a for a in argv)
     assert not any("--teleop" in a for a in argv)
+
+
+def test_run_policy_skips_empty_cameras() -> None:
+    argv = SO101Controller().run_policy(
+        "so101_follower", "/dev/ttyACM0", "/cal/f",
+        "5B14032630",
+        cameras={}, policy_path="/models/act_checkpoint",
+    )
+    assert not any("--robot.cameras=" in a for a in argv)
 
 
 def test_train() -> None:
