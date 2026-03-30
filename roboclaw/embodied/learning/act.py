@@ -15,9 +15,10 @@ class ACTPipeline:
         output_dir: str,
         steps: int = 100000,
         device: str = "cuda",
+        resume: bool = False,
     ) -> list[str]:
         """Build the ACT training command (LeRobot 0.5.0 format)."""
-        return [
+        argv = [
             "lerobot-train",
             f"--dataset.repo_id={repo_id}",
             f"--dataset.root={Path(dataset_root).expanduser()}",
@@ -29,6 +30,12 @@ class ACTPipeline:
             f"--steps={steps}",
             f"--policy.device={device}",
         ]
+        if resume:
+            argv.append("--resume=true")
+            config_path = Path(output_dir).expanduser() / "checkpoints" / "last" / "pretrained_model" / "train_config.json"
+            if config_path.exists():
+                argv.append(f"--config_path={config_path}")
+        return argv
 
     def checkpoint_path(self, output_dir: str) -> str:
         """Return the last checkpoint path."""

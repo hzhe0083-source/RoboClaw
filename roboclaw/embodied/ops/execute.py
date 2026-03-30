@@ -494,12 +494,15 @@ async def _do_train(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: 
         return error
     dataset_root = _dataset_path(setup, dataset_name)
     policies_root = setup.get("policies", {}).get("root", "")
+    output_dir = Path(policies_root).expanduser() / dataset_name
+    resume = output_dir.is_dir()
     argv = ACTPipeline().train(
         repo_id=f"local/{dataset_name}",
         dataset_root=str(dataset_root),
-        output_dir=str(Path(policies_root).expanduser() / dataset_name),
+        output_dir=str(output_dir),
         steps=kwargs.get("steps", 100_000),
         device=kwargs.get("device", "cuda"),
+        resume=resume,
     )
     job_id = await LocalLeRobotRunner().run_detached(argv=argv, log_dir=_logs_dir())
     return f"Training started. Job ID: {job_id}"
