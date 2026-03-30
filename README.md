@@ -19,6 +19,27 @@
   <img src="roboclaw_arch.png" alt="RoboClaw Architecture" width="800" />
 </p>
 
+## ⚡ Unified Control, Different Surfaces
+
+<table>
+<tr>
+<th width="70%">🖥️ CLI / TUI</th>
+<th width="30%">📱 Mobile</th>
+</tr>
+<tr>
+<td>
+
+https://github.com/MINT-SJTU/RoboClaw/raw/main/roboclaw_demo.mp4
+
+</td>
+<td align="center">
+<br/><br/><br/>
+<b>Coming Soon</b>
+<br/><br/><br/><br/>
+</td>
+</tr>
+</table>
+
 ## 📢 News
 
 - **2026-03-24** Conversational arm setup, calibration, teleoperation, data collection, training, and inference.
