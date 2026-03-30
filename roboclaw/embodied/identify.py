@@ -29,8 +29,8 @@ _ARM_TYPE_CHOICES = {
     "follower": _follower,
     _leader: _leader,
     _follower: _follower,
-    "主": _leader,
-    "从": _follower,
+    "main": _leader,
+    "secondary": _follower,
 }
 
 
@@ -47,14 +47,14 @@ def _read_line(prompt: str) -> str:
 def _choose_arm_type() -> str:
     """Prompt until a valid arm type is selected."""
     print("Choose arm type:")
-    print("  1. leader (主臂)")
-    print("  2. follower (从臂)")
+    print("  1. leader")
+    print("  2. follower")
     while True:
         choice = _read_line("Select [1/2]: ").strip().casefold()
         arm_type = _ARM_TYPE_CHOICES.get(choice)
         if arm_type is not None:
             return arm_type
-        print("Invalid choice. Enter 1, 2, 主, 从, leader, or follower.")
+        print("Invalid choice. Enter 1, 2, main, secondary, leader, or follower.")
 
 
 def _choose_alias(existing_aliases: set[str]) -> str:

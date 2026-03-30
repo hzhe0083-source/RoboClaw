@@ -60,7 +60,7 @@ def _provider_options(config: Any) -> list[dict[str, Any]]:
                 "api_base": provider_config.api_base if provider_config and provider_config.api_base else "",
                 "has_api_key": bool(api_key),
                 "masked_api_key": (
-                    f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) >= 10 else ("已保存" if api_key else "")
+                    f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) >= 10 else ("Saved" if api_key else "")
                 ),
                 "extra_headers": provider_config.extra_headers if provider_config and provider_config.extra_headers else {},
             }

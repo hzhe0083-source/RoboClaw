@@ -71,10 +71,9 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <header className="bg-gray-800 border-b border-gray-700 p-4">
-        <h2 className="text-xl font-semibold">设置</h2>
+        <h2 className="text-xl font-semibold">Settings</h2>
         <p className="mt-2 text-sm text-gray-400">
-          这里只保留整个 RoboClaw 实例级别的全局 provider 配置。填写 base URL 和 API key 后，
-          新的对话请求会直接使用这份配置。
+          This page only manages the instance-wide RoboClaw provider configuration. After you enter a base URL and API key, new chat requests will use that configuration.
         </p>
       </header>
 
@@ -113,13 +112,13 @@ export default function SettingsPage() {
                   value={apiKey}
                   onChange={(event) => setApiKey(event.target.value)}
                   className="w-full rounded-lg border border-gray-600 bg-gray-900 px-4 py-2 text-white"
-                  placeholder="留空表示保持当前 key 不变"
+                  placeholder="Leave blank to keep the current key"
                 />
               </label>
 
               <div className="rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-sm text-gray-300">
-                <div>当前保存状态: {hasSavedKey ? '已保存' : '未保存'}</div>
-                {savedKeyMask && <div>已保存的 key: {savedKeyMask}</div>}
+                <div>Saved key status: {hasSavedKey ? 'Saved' : 'Not saved'}</div>
+                {savedKeyMask && <div>Saved key: {savedKeyMask}</div>}
               </div>
             </section>
 
@@ -129,10 +128,10 @@ export default function SettingsPage() {
                 disabled={saving}
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-600"
               >
-                {saving ? '保存中...' : '保存设置'}
+                {saving ? 'Saving...' : 'Save settings'}
               </button>
               <div className="text-sm text-gray-400">
-                保存后会自动跳回聊天页。
+                After saving, the page will automatically return to chat.
               </div>
             </div>
           </form>

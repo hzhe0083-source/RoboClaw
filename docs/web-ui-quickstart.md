@@ -1,103 +1,103 @@
-# RoboClaw Web UI 快速开始
+# RoboClaw Web UI Quickstart
 
-## 安装
+## Installation
 
-### 1. 安装 Python 依赖（包含 web 支持）
+### 1. Install Python dependencies, including Web support
 
 ```bash
 uv venv
 uv sync --extra dev --extra web
 ```
 
-`run.py` and the Web chat UI do not require the embodied learning stack. Only
-add `--extra learning` when you also want LeRobot-backed collection or training
-features:
+`run.py` and the Web chat UI do not require the embodied learning stack. Add
+`--extra learning` only when you also need LeRobot-backed collection or
+training features:
 
 ```bash
 uv sync --extra dev --extra web --extra learning
 ```
 
-### 2. 安装前端依赖
+### 2. Install frontend dependencies
 
 ```bash
 cd roboclaw-web
 npm install
 ```
 
-## 开发模式
+## Development Mode
 
-### 一键启动
+### One-command startup
 
 ```bash
 uv run run.py
 ```
 
-这个入口会：
+This entrypoint will:
 
-- 通过 `uv run --extra web --locked roboclaw web start` 启动后端
-- 在前端依赖缺失时自动执行 `npm install`
-- 启动 `roboclaw-web` 前端开发服务器
+- start the backend with `uv run --extra web --locked roboclaw web start`
+- run `npm install` automatically if frontend dependencies are missing
+- start the `roboclaw-web` frontend development server
 
-默认地址：
+Default addresses:
 
-- 前端: `http://localhost:5173`
-- 后端: `http://localhost:8765`
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8765`
 
-### 启动后端（Terminal 1）
+### Start the backend manually (Terminal 1)
 
 ```bash
 uv run roboclaw web start
 ```
 
-后端将在 http://localhost:8765 启动
+The backend will listen on `http://localhost:8765`.
 
-### 启动前端（Terminal 2）
+### Start the frontend manually (Terminal 2)
 
 ```bash
 cd roboclaw-web
 npm run dev
 ```
 
-前端将在 http://localhost:5173 启动
+The frontend will listen on `http://localhost:5173`.
 
-### 访问
+### Open the app
 
-打开浏览器访问 http://localhost:5173
+Visit `http://localhost:5173` in your browser.
 
-## 生产模式
+## Production Mode
 
-### 构建前端
+### Build the frontend
 
 ```bash
 cd roboclaw-web
 npm run build
 ```
 
-### 启动服务器
+### Start the server
 
 ```bash
 roboclaw web start
 ```
 
-## 功能状态
+## Feature Status
 
-- ✅ **对话界面**: 可用 - 与 RoboClaw agent 实时对话
-- 🚧 **机器人监控**: 开发中 - 实时状态和传感器数据
-- 🚧 **控制面板**: 开发中 - 遥操作界面
-- 🚧 **数据集工作台**: 计划中 - Nexla 集成
+- `Chat UI`: available and connected to the RoboClaw agent
+- `Robot monitor`: in progress
+- `Control panel`: in progress
+- `Dataset workbench`: planned as the Nexla integration point
 
-## 架构
+## Architecture
 
-```
+```text
 ┌─────────────────────────────────────┐
-│   React Frontend (Port 5173)       │
+│   React Frontend (Port 5173)        │
 │   - Chat UI                         │
 │   - Monitor (coming soon)           │
 │   - Control (coming soon)           │
 └──────────────┬──────────────────────┘
                │ WebSocket
 ┌──────────────▼──────────────────────┐
-│   FastAPI Backend (Port 8765)      │
+│   FastAPI Backend (Port 8765)       │
 │   - WebSocket server                │
 │   - Message routing                 │
 └──────────────┬──────────────────────┘
@@ -107,34 +107,37 @@ roboclaw web start
 └─────────────────────────────────────┘
 ```
 
-## 故障排除
+## Troubleshooting
 
-### WebSocket 连接失败
+### WebSocket connection fails
 
-确保后端服务器正在运行：
+Make sure the backend server is running:
+
 ```bash
 uv run roboclaw web start
 ```
 
-### 前端构建失败
+### Frontend build fails
 
-清理并重新安装依赖：
+Clean and reinstall dependencies:
+
 ```bash
 cd roboclaw-web
 rm -rf node_modules package-lock.json
 npm install
 ```
 
-### 端口冲突
+### Port conflicts
 
-修改端口：
-- 后端：编辑 `server.py` 中的 `port` 参数
-- 前端：编辑 `vite.config.ts` 中的 `server.port`
+Adjust the ports:
 
-## 下一步
+- Backend: update the `port` argument passed to `roboclaw web start`
+- Frontend: update `server.port` in `vite.config.ts`
 
-- [ ] 实现机器人状态监控
-- [ ] 实现遥操作控制界面
-- [ ] 集成 Nexla 数据集工作台
-- [ ] 添加认证和授权
-- [ ] 性能优化和测试
+## Next Steps
+
+- [ ] Build a real robot monitoring surface
+- [ ] Build a real teleoperation/control surface
+- [ ] Integrate the Nexla dataset workbench
+- [ ] Add authentication and authorization
+- [ ] Improve performance and test coverage
