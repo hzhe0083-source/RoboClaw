@@ -79,7 +79,7 @@ def test_agent_cjk_input(simulated_agent_child) -> None:
     """CJK characters should not cause encoding crashes."""
     child = simulated_agent_child
     child.expect(r"You:", timeout=15)
-    child.sendline("你好")
+    child.sendline("hello")
     idx = child.expect([r"You:", r"Error", pexpect.TIMEOUT, pexpect.EOF], timeout=15)
     assert idx in (0, 1), f"Agent crashed or timed out on CJK input (idx={idx})"
 

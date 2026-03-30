@@ -53,16 +53,16 @@ export default function ChatPage() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700 p-4">
-        <h2 className="text-xl font-semibold">对话</h2>
+        <h2 className="text-xl font-semibold">Chat</h2>
       </header>
 
       {!providerConfigured && (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          当前还没有配置可用的 provider。请先到{' '}
+          No usable provider is configured yet. Go to{' '}
           <Link to="/settings" className="font-semibold underline">
-            设置
+            Settings
           </Link>
-          {' '}页面填写 API key 或 API base，保存后新的聊天请求会立即使用更新后的配置。
+          {' '}and enter an API key or API base. New chat requests will use the updated configuration immediately after you save.
         </div>
       )}
 
@@ -70,7 +70,7 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-8">
-            <p>开始与 RoboClaw 对话</p>
+            <p>Start chatting with RoboClaw</p>
           </div>
         )}
 
@@ -105,7 +105,7 @@ export default function ChatPage() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={connected ? '输入消息...' : '等待连接...'}
+            placeholder={connected ? 'Type a message...' : 'Waiting for connection...'}
             disabled={!connected}
             className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           />
@@ -114,7 +114,7 @@ export default function ChatPage() {
             disabled={!connected || !input.trim()}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition-colors"
           >
-            发送
+            Send
           </button>
         </div>
       </form>

@@ -41,7 +41,7 @@ def test_provider_status_and_save_roundtrip(tmp_path: Path) -> None:
     assert saved["custom_provider"]["configured"] is True
     assert saved["default_provider"] == "custom"
     assert saved["custom_provider"]["has_api_key"] is True
-    assert saved["custom_provider"]["masked_api_key"] == "已保存"
+    assert saved["custom_provider"]["masked_api_key"] == "Saved"
 
 
 def test_provider_save_auto_discovers_model(tmp_path: Path, monkeypatch) -> None:
@@ -69,4 +69,4 @@ def test_provider_save_auto_discovers_model(tmp_path: Path, monkeypatch) -> None
     assert save.status_code == 200
     saved = save.json()
     assert saved["default_model"] == "gpt-4.1-mini"
-    assert saved["custom_provider"]["masked_api_key"] == "已保存" or saved["custom_provider"]["masked_api_key"].startswith("sk-te")
+    assert saved["custom_provider"]["masked_api_key"] == "Saved" or saved["custom_provider"]["masked_api_key"].startswith("sk-te")

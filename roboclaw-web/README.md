@@ -1,72 +1,72 @@
 # RoboClaw Web UI
 
-RoboClaw 的 Web 用户界面，提供可视化的机器人控制、监控和数据集管理能力。
+The RoboClaw Web UI provides a visual interface for chat, monitoring, control,
+and future dataset/workbench flows.
 
-## 功能
+## Features
 
-- **对话界面**: 与 RoboClaw agent 实时对话
-- **机器人监控**: 实时状态显示和传感器数据可视化（即将推出）
-- **控制面板**: 遥操作和控制界面（即将推出）
-- **数据集工作台**: 数据集管理和标注（即将推出）
+- `Chat UI`: real-time conversation with the RoboClaw agent
+- `Robot monitor`: planned
+- `Control panel`: planned
+- `Dataset workbench`: planned
 
-## 开发
+## Development
 
-### 安装依赖
+### Install dependencies
 
 ```bash
 npm install
 ```
 
-### 启动开发服务器
+### Start the development server
 
 ```bash
 npm run dev
 ```
 
-访问 http://localhost:5173
+Open `http://localhost:5173`.
 
-### 构建生产版本
+### Build for production
 
 ```bash
 npm run build
 ```
 
-## 技术栈
+## Tech Stack
 
 - React 18
 - TypeScript
 - Vite
 - Tailwind CSS
-- Zustand (状态管理)
+- Zustand
 - React Router
-- WebSocket (实时通信)
+- WebSocket
 
-## 架构
+## Structure
 
-```
+```text
 src/
-├── features/          # 功能模块
-│   ├── chat/         # 对话界面
-│   ├── control/      # 控制面板
-│   ├── monitor/      # 监控面板
-│   └── workbench/    # 数据集工作台
-├── shared/           # 共享代码
-│   ├── components/   # 共享组件
-│   ├── hooks/        # 自定义 hooks
-│   ├── api/          # API 客户端
-│   └── utils/        # 工具函数
-└── assets/           # 静态资源
+├── features/          # Feature areas
+│   ├── chat/          # Chat UI
+│   ├── control/       # Control panel
+│   ├── monitor/       # Monitoring panel
+│   └── workbench/     # Dataset workbench
+├── shared/            # Shared code
+│   ├── components/    # Shared components
+│   ├── api/           # API clients
+│   └── utils/         # Utilities
+└── assets/            # Static assets
 ```
 
-## 与后端通信
+## Backend Communication
 
-Web UI 通过 WebSocket 与 RoboClaw 后端通信：
+The Web UI talks to the RoboClaw backend over WebSocket and HTTP:
 
-- WebSocket 端点: `ws://localhost:8765/ws`
+- WebSocket endpoint: `ws://localhost:8765/ws`
 - REST API: `http://localhost:8765/api/*`
 
-确保后端 Web Channel 已启动：
+Make sure the backend Web channel is running:
 
 ```bash
-roboclaw web start
+uv run roboclaw web start
 ```

@@ -12,11 +12,11 @@ export default function Layout() {
   }, [connect, disconnect])
 
   const navItems = [
-    { path: '/chat', label: '对话' },
-    { path: '/monitor', label: '监控' },
-    { path: '/control', label: '控制' },
-    { path: '/workbench', label: '工作台' },
-    { path: '/settings', label: '设置' },
+    { path: '/chat', label: 'Chat' },
+    { path: '/monitor', label: 'Monitor' },
+    { path: '/control', label: 'Control' },
+    { path: '/workbench', label: 'Workbench' },
+    { path: '/settings', label: 'Settings' },
   ]
 
   return (
@@ -27,11 +27,11 @@ export default function Layout() {
           <h1 className="text-2xl font-bold">RoboClaw</h1>
           <div className="mt-2 text-sm">
             <span className={`inline-block w-2 h-2 rounded-full mr-2 ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-            {connected ? '已连接' : '未连接'}
+            {connected ? 'Connected' : 'Disconnected'}
           </div>
           {sessionId && (
             <div className="mt-2 text-xs text-gray-400 break-all">
-              会话: {sessionId}
+              Session: {sessionId}
             </div>
           )}
         </div>

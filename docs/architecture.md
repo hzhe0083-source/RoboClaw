@@ -3,31 +3,31 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          Interface                              │
-│               CLI · Web UI · Discord · Telegram · WeChat        │
+│               CLI | Web UI | Discord | Telegram | WeChat        │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
 ┌──────────────────────────────▼────────────────────┐   ┌───────┐
 │                    Agent Runtime                   │◄─►│  LLM  │
-│        Agent loop · Memory · Tool · Spawn · Lifecycle │ └───────┘
+│        Agent loop | Memory | Tool | Spawn | Lifecycle │ └───────┘
 └──────────────────────────────┬────────────────────┘
                                │ Invoke skill
 ┌──────────────────────────────▼──────────────────────────────────┐
 │                       Skill Ecosystem                           │
 │                                                                 │
 │  ┌──────────────┐   ┌──────────────────┐   ┌────────────────┐  │
-│  │  Primitive    │   │     Skill        │   │    Policy       │  │
+│  │  Primitive    │   │     Skill        │   │    Policy      │  │
 │  │  Body-bound   │   │  Body-agnostic,  │   │  Learned,      │  │
 │  │  actions      │   │  composable      │   │  deployable    │  │
 │  └──────────────┘   └──────────────────┘   └────────────────┘  │
 │                                                                 │
-│          Skill Hub: share · download · reuse · auto-adapt       │
+│          Skill Hub: share | download | reuse | auto-adapt       │
 └────┬─────────────────────────┬──────────────────────┬───────────┘
      │                         │                      │
      ▼                         ▼                      ▼
 ┌──────────────┐   ┌────────────────────┐   ┌─────────────────┐
 │  Embodiment  │   │     Learning       │   │   Perception    │
 │              │   │                    │   │                 │
-│  Control     │   │  Data collector    │   │  Camera +       │
+│  Control     │   │  Data collection   │   │  Camera +       │
 │   dispatch   │   │  Policy library    │   │   Detection     │
 │  Embodiment  │   │  Train + Deploy    │   │  VLM scene      │
 │   registry   │   │                    │   │   understanding │
@@ -48,6 +48,6 @@
               │
 ┌─────────────▼───────────────────────────────────────────────┐
 │                   Embodiment Onboarding                     │
-│           Zero-code: describe hardware via dialog           │
+│           Zero-code: describe hardware in dialogue          │
 └─────────────────────────────────────────────────────────────┘
 ```
