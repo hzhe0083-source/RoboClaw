@@ -236,7 +236,7 @@ function canDo(state: RobotState) {
 // ── Main View ─────────────────────────────────────────────────
 export default function DashboardView() {
   const store = useDataCollection()
-  const { state, stats, episodeNum, logs, datasets, loading } = store
+  const { state, stats, logs, datasets, loading } = store
   const { hardwareStatus: hwStatus, fetchHardwareStatus } = useDashboard()
   const ok = canDo(state)
   const logRef = useRef<HTMLDivElement>(null)
@@ -462,14 +462,20 @@ export default function DashboardView() {
               </div>
 
               {state === 'recording' && (
-                <div className="text-center py-4 bg-bg rounded-lg border border-bd">
-                  <div className="text-4xl font-bold text-ac leading-tight max-[500px]:text-3xl">
-                    {episodeNum}
+                <>
+                  <div className="flex gap-2 flex-wrap mb-3">
+                    <Btn variant="gn" onClick={store.doSaveEpisode}>
+                      {t('saveEpisode')}
+                    </Btn>
+                    <Btn variant="rd" onClick={store.doDiscardEpisode}>
+                      {t('discardEpisode')}
+                    </Btn>
                   </div>
-                  <div className="text-xs text-tx2 uppercase tracking-widest mt-1">
-                    {t('episodesRecorded')}
+                  <div className="flex items-center gap-2 text-sm text-ac">
+                    <span className="w-2 h-2 rounded-full bg-ac animate-pulse" />
+                    {t('stateRecording')}
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>

@@ -35,6 +35,7 @@ class RobotSession:
         self._grouped: dict[str, list[dict]] = {}
         self._cameras: dict[str, dict] = {}
         self._process_pid: int | None = None
+        self._process_stdin: Any = None
         self._recording_dataset: str = ""
         self._temp_dirs: list[str] = []
 
@@ -239,22 +240,44 @@ class RobotSession:
 
     # -- Subprocess management -----------------------------------------
 
+    def save_episode(self) -> None:
+        """Send 'right arrow' to subprocess → save current episode, start next."""
+        self._send_key(b"\x1b[C")
+        logger.info("Sent save-episode signal (right arrow)")
+
+    def discard_episode(self) -> None:
+        """Send 'left arrow' to subprocess → discard and rerecord current episode."""
+        self._send_key(b"\x1b[D")
+        logger.info("Sent discard-episode signal (left arrow)")
+
+    def _send_key(self, key: bytes) -> None:
+        if self._process_stdin is None:
+            raise RuntimeError("No subprocess stdin available")
+        self._process_stdin.write(key)
+        self._process_stdin.flush()
+
     def _launch_subprocess(self, argv: list[str]) -> None:
-        # Pipe stdin with newlines to auto-confirm LeRobot calibration prompts
-        # ("Press ENTER to use provided calibration file...")
         proc = subprocess.Popen(
             argv,
             stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             start_new_session=True,
         )
-        # Send enough newlines for bimanual (2 leaders × 1 prompt each)
+        # Auto-confirm calibration prompts (Press ENTER...)
         if proc.stdin:
             proc.stdin.write(b"\n\n\n\n")
-            proc.stdin.close()
+            proc.stdin.flush()
+        self._process_stdin = proc.stdin
         self._process_pid = proc.pid
         logger.info("Launched subprocess pid={}: {}", proc.pid, " ".join(argv[:5]))
 
     def _kill_subprocess(self) -> None:
+        if self._process_stdin is not None:
+            try:
+                self._process_stdin.close()
+            except OSError:
+                pass
+            self._process_stdin = None
         pid = self._process_pid
         if pid is not None:
             try:

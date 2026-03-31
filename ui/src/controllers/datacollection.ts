@@ -164,6 +164,7 @@ export const useDataCollection = create<DataCollectionStore>((set, get) => ({
     try {
       await postJson(`${API}/record/stop`)
       get().addLog('Recording stopped', 'info')
+      get().loadDatasets()
     } catch (e: unknown) {
       get().addLog(`Record stop failed: ${(e as Error).message}`, 'err')
     }
@@ -172,20 +173,20 @@ export const useDataCollection = create<DataCollectionStore>((set, get) => ({
   doSaveEpisode: async () => {
     get().addLog('Saving episode...')
     try {
-      await postJson(`${API}/record/save`)
-      get().addLog('Episode saved', 'ok')
+      await postJson(`${API}/record/save-episode`)
+      get().addLog('Episode saved, starting next', 'ok')
     } catch (e: unknown) {
-      get().addLog(`Save failed: ${(e as Error).message}`, 'err')
+      get().addLog(`Save episode failed: ${(e as Error).message}`, 'err')
     }
   },
 
   doDiscardEpisode: async () => {
     get().addLog('Discarding episode...')
     try {
-      await postJson(`${API}/record/discard`)
-      get().addLog('Episode discarded', 'info')
+      await postJson(`${API}/record/discard-episode`)
+      get().addLog('Episode discarded, rerecording', 'info')
     } catch (e: unknown) {
-      get().addLog(`Discard failed: ${(e as Error).message}`, 'err')
+      get().addLog(`Discard episode failed: ${(e as Error).message}`, 'err')
     }
   },
 

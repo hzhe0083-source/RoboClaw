@@ -111,6 +111,20 @@ async def record_stop() -> dict[str, str]:
     return {"status": "connected"}
 
 
+@router.post("/record/save-episode")
+async def record_save_episode() -> dict[str, str]:
+    """Save current episode and start next one."""
+    _session().save_episode()
+    return {"status": "episode_saved"}
+
+
+@router.post("/record/discard-episode")
+async def record_discard_episode() -> dict[str, str]:
+    """Discard current episode and rerecord."""
+    _session().discard_episode()
+    return {"status": "episode_discarded"}
+
+
 # ---------------------------------------------------------------------------
 # Datasets
 # ---------------------------------------------------------------------------
