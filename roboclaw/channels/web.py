@@ -11,7 +11,6 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from roboclaw.bus.events import OutboundMessage
@@ -20,7 +19,11 @@ from roboclaw.channels.base import BaseChannel
 
 
 class WebChannel(BaseChannel):
-    """FastAPI/WebSocket channel for the RoboClaw web UI."""
+    """WebSocket channel for the RoboClaw web UI.
+
+    Pure transport — does not own a FastAPI app.  Call
+    ``register_routes(app)`` to wire the endpoints onto an external app.
+    """
 
     name = "web"
     display_name = "Web UI"
@@ -30,14 +33,6 @@ class WebChannel(BaseChannel):
         self.sessions = session_manager
         self._connections: dict[str, set[WebSocket]] = defaultdict(set)
         self._stop_event = asyncio.Event()
-        self._app = FastAPI(title="RoboClaw Web API")
-        self._setup_cors()
-        self._setup_routes()
-
-    @property
-    def app(self) -> FastAPI:
-        """Expose the FastAPI app for the web server."""
-        return self._app
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
@@ -50,57 +45,41 @@ class WebChannel(BaseChannel):
             "cors_origins": ["http://localhost:5173"],
         }
 
-    def _config_value(self, key: str, default: Any) -> Any:
-        if isinstance(self.config, dict):
-            return self.config.get(key, default)
-        return getattr(self.config, key, default)
+    # ------------------------------------------------------------------
+    # Route registration
+    # ------------------------------------------------------------------
 
-    def _setup_cors(self) -> None:
-        """Allow the local Vite dev server by default."""
-        origins = self._config_value("cors_origins", ["http://localhost:5173"])
-        self._app.add_middleware(
-            CORSMiddleware,
-            allow_origins=origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+    def register_routes(self, app: FastAPI) -> None:
+        """Register chat websocket and session REST routes on *app*."""
 
-    def _setup_routes(self) -> None:
-        """Register lightweight chat/session routes."""
-
-        @self._app.get("/api/health")
+        @app.get("/api/health")
         async def health_check() -> dict[str, str]:
             return {"status": "ok", "channel": self.name}
 
-        @self._app.get("/api/chat/sessions")
+        @app.get("/api/chat/sessions")
         async def list_sessions() -> list[dict[str, Any]]:
             if self.sessions is None:
                 return []
-            items = []
-            for item in self.sessions.list_sessions():
-                key = item.get("key", "")
-                if not key.startswith(f"{self.name}:"):
-                    continue
-                items.append(
-                    {
-                        "chat_id": key.split(":", 1)[1],
-                        "created_at": item.get("created_at"),
-                        "updated_at": item.get("updated_at"),
-                    }
-                )
-            return items
+            return [
+                _session_summary(item)
+                for item in self.sessions.list_sessions()
+                if item.get("key", "").startswith(f"{self.name}:")
+            ]
 
-        @self._app.get("/api/chat/sessions/{chat_id}")
+        @app.get("/api/chat/sessions/{chat_id}")
         async def get_session(chat_id: str) -> dict[str, Any]:
             if self.sessions is None:
                 raise HTTPException(status_code=404, detail="Session storage is unavailable.")
             return {"chat_id": chat_id, "messages": self._session_history(chat_id)}
 
-        @self._app.websocket("/ws")
+        @app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket) -> None:
             chat_id = websocket.query_params.get("chat_id") or uuid4().hex[:12]
             await self._handle_websocket(websocket, chat_id)
+
+    # ------------------------------------------------------------------
+    # WebSocket handling
+    # ------------------------------------------------------------------
 
     async def _handle_websocket(self, websocket: WebSocket, chat_id: str) -> None:
         """Accept a socket and proxy messages into the shared bus."""
@@ -119,21 +98,7 @@ class WebChannel(BaseChannel):
         )
 
         try:
-            while True:
-                payload = json.loads(await websocket.receive_text())
-                content = str(payload.get("content", "")).strip()
-                if not content:
-                    continue
-                metadata = payload.get("metadata") or {}
-                media = payload.get("media") or []
-                sender_id = str(payload.get("sender_id") or user_id)
-                await self._handle_message(
-                    sender_id=sender_id,
-                    chat_id=chat_id,
-                    content=content,
-                    media=media,
-                    metadata=metadata,
-                )
+            await self._read_loop(websocket, chat_id, user_id)
         except WebSocketDisconnect:
             logger.info("Web UI client disconnected: {}", user_id)
         except json.JSONDecodeError:
@@ -148,6 +113,24 @@ class WebChannel(BaseChannel):
             if not self._connections[chat_id]:
                 self._connections.pop(chat_id, None)
 
+    async def _read_loop(self, websocket: WebSocket, chat_id: str, user_id: str) -> None:
+        while True:
+            payload = json.loads(await websocket.receive_text())
+            content = str(payload.get("content", "")).strip()
+            if not content:
+                continue
+            await self._handle_message(
+                sender_id=str(payload.get("sender_id") or user_id),
+                chat_id=chat_id,
+                content=content,
+                media=payload.get("media") or [],
+                metadata=payload.get("metadata") or {},
+            )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
     async def _send_json(self, websocket: WebSocket, payload: dict[str, Any]) -> None:
         await websocket.send_text(json.dumps(payload, ensure_ascii=False))
 
@@ -158,21 +141,14 @@ class WebChannel(BaseChannel):
         if self.sessions is None:
             return []
         session = self.sessions.get_or_create(self._session_key(chat_id))
-        history = []
-        for index, message in enumerate(session.messages):
-            content = message.get("content", "")
-            if isinstance(content, list):
-                content = json.dumps(content, ensure_ascii=False)
-            history.append(
-                {
-                    "id": message.get("id") or f"{chat_id}:{index}",
-                    "role": message.get("role", "assistant"),
-                    "content": content,
-                    "timestamp": message.get("timestamp"),
-                    "metadata": {},
-                }
-            )
-        return history
+        return [
+            _history_entry(chat_id, index, message)
+            for index, message in enumerate(session.messages)
+        ]
+
+    # ------------------------------------------------------------------
+    # Outbound
+    # ------------------------------------------------------------------
 
     async def send(self, msg: OutboundMessage) -> None:
         """Broadcast an outbound message to all sockets bound to the chat id."""
@@ -202,6 +178,10 @@ class WebChannel(BaseChannel):
         if msg.chat_id in self._connections and not self._connections[msg.chat_id]:
             self._connections.pop(msg.chat_id, None)
 
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
     async def start(self) -> None:
         """Keep the channel alive for ChannelManager compatibility."""
         self._running = True
@@ -218,3 +198,30 @@ class WebChannel(BaseChannel):
                 with suppress(Exception):
                     await websocket.close()
         self._connections.clear()
+
+
+# ------------------------------------------------------------------
+# Module-level helpers (keep dict construction out of nested scopes)
+# ------------------------------------------------------------------
+
+
+def _session_summary(item: dict[str, Any]) -> dict[str, Any]:
+    key = item.get("key", "")
+    return {
+        "chat_id": key.split(":", 1)[1],
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+    }
+
+
+def _history_entry(chat_id: str, index: int, message: dict[str, Any]) -> dict[str, Any]:
+    content = message.get("content", "")
+    if isinstance(content, list):
+        content = json.dumps(content, ensure_ascii=False)
+    return {
+        "id": message.get("id") or f"{chat_id}:{index}",
+        "role": message.get("role", "assistant"),
+        "content": content,
+        "timestamp": message.get("timestamp"),
+        "metadata": {},
+    }

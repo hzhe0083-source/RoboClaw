@@ -412,20 +412,11 @@ def _make_provider(config: Config):
 
 def _load_runtime_config(config: str | None = None, workspace: str | None = None) -> Config:
     """Load config and optionally override the active workspace."""
-    from roboclaw.config.loader import load_config, set_config_path
+    from roboclaw.config.loader import load_runtime_config
 
-    config_path = None
+    loaded = load_runtime_config(config, workspace)
     if config:
-        config_path = Path(config).expanduser().resolve()
-        if not config_path.exists():
-            console.print(f"[red]Error: Config file not found: {config_path}[/red]")
-            raise typer.Exit(1)
-        set_config_path(config_path)
-        console.print(f"[dim]Using config: {config_path}[/dim]")
-
-    loaded = load_config(config_path)
-    if workspace:
-        loaded.agents.defaults.workspace = workspace
+        console.print(f"[dim]Using config: {Path(config).expanduser().resolve()}[/dim]")
     return loaded
 
 

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import importlib
 import os
-from pathlib import Path
 from typing import Any
 
-from roboclaw.config import load_config
 from roboclaw.config.schema import Config
 from roboclaw.providers.azure_openai_provider import AzureOpenAIProvider
 from roboclaw.providers.base import GenerationSettings, LLMProvider, LLMResponse
@@ -88,73 +86,20 @@ def build_provider(config: Config) -> LLMProvider:
     return provider
 
 
-class ConfigBackedProvider(LLMProvider):
-    """Lazy provider that reloads config so the Web UI can update settings live."""
+class UnconfiguredProvider(LLMProvider):
+    """Placeholder when no provider is configured. Replaced on settings save."""
 
-    def __init__(self, config_path: Path | None = None):
+    def __init__(self, message: str = ""):
         super().__init__(api_key=None, api_base=None)
-        self._config_path = config_path
-
-    def _load(self) -> Config:
-        return load_config(self._config_path)
-
-    def _config_error_response(self, exc: ProviderConfigurationError) -> LLMResponse:
-        hint = f" {exc.hint}" if exc.hint else ""
-        return LLMResponse(
-            content=(
-                f"Provider is not configured. {exc}{hint} "
-                "Open Settings > Provider in the Web UI and save your configuration."
-            ),
-            finish_reason="error",
+        self._message = message or (
+            "No provider configured. Please open Settings and save your API configuration."
         )
 
-    async def chat(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        model: str | None = None,
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
-        reasoning_effort: str | None = None,
-        tool_choice: str | dict[str, Any] | None = None,
-    ) -> LLMResponse:
-        try:
-            provider = build_provider(self._load())
-        except ProviderConfigurationError as exc:
-            return self._config_error_response(exc)
-        return await provider.chat(
-            messages=messages,
-            tools=tools,
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            reasoning_effort=reasoning_effort,
-            tool_choice=tool_choice,
-        )
+    async def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=self._message, finish_reason="error")
 
-    async def chat_with_retry(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        model: str | None = None,
-        max_tokens: object = LLMProvider._SENTINEL,
-        temperature: object = LLMProvider._SENTINEL,
-        reasoning_effort: object = LLMProvider._SENTINEL,
-        tool_choice: str | dict[str, Any] | None = None,
-    ) -> LLMResponse:
-        try:
-            provider = build_provider(self._load())
-        except ProviderConfigurationError as exc:
-            return self._config_error_response(exc)
-        return await provider.chat_with_retry(
-            messages=messages,
-            tools=tools,
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            reasoning_effort=reasoning_effort,
-            tool_choice=tool_choice,
-        )
+    async def chat_with_retry(self, messages: list[dict[str, Any]], **kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=self._message, finish_reason="error")
 
     def get_default_model(self) -> str:
-        return self._load().agents.defaults.model
+        return "unconfigured"

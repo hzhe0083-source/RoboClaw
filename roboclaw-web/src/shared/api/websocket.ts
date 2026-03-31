@@ -102,7 +102,13 @@ export const useWebSocket = create<WebSocketStore>((set, get) => ({
       if (get().ws !== ws) {
         return
       }
-      const data = JSON.parse(event.data)
+      let data: any
+      try {
+        data = JSON.parse(event.data)
+      } catch {
+        console.warn('Non-JSON websocket message:', event.data)
+        return
+      }
 
       if (data.type === 'session') {
         const resolvedSessionId = String(data.chat_id || sessionId)

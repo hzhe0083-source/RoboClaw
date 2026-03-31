@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("fastapi")
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from roboclaw.bus.queue import MessageBus
@@ -20,7 +21,9 @@ def test_web_channel_health_and_session_routes(tmp_path) -> None:
         MessageBus(),
         session_manager=SessionManager(tmp_path),
     )
-    client = TestClient(channel.app)
+    app = FastAPI()
+    channel.register_routes(app)
+    client = TestClient(app)
 
     health = client.get("/api/health")
     assert health.status_code == 200
