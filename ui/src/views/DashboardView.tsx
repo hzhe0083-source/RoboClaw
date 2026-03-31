@@ -225,7 +225,7 @@ function canDo(state: RobotState) {
     disconnect: !disc,
     teleopStart: conn,
     teleopStop: tele,
-    recStart: tele,
+    recStart: conn || tele,
     recStop: rec,
     saveEp: rec,
     discardEp: rec,
