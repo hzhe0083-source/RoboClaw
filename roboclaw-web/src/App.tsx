@@ -3,7 +3,6 @@ import ChatPage from './features/chat/ChatPage'
 import ControlPage from './features/control/ControlPage'
 import MonitorPage from './features/monitor/MonitorPage'
 import SettingsPage from './features/settings/SettingsPage'
-import WorkbenchPage from './features/workbench/WorkbenchPage'
 import Layout from './shared/components/Layout'
 
 function App() {
@@ -15,7 +14,6 @@ function App() {
           <Route path="chat" element={<ChatPage />} />
           <Route path="control" element={<ControlPage />} />
           <Route path="monitor" element={<MonitorPage />} />
-          <Route path="workbench" element={<WorkbenchPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

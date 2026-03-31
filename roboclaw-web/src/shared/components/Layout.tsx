@@ -15,7 +15,6 @@ export default function Layout() {
     { path: '/chat', label: '对话' },
     { path: '/monitor', label: '监控' },
     { path: '/control', label: '控制' },
-    { path: '/workbench', label: '工作台' },
     { path: '/settings', label: '设置' },
   ]
 
