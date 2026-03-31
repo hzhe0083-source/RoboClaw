@@ -157,6 +157,59 @@ async def cameras_discover() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Servo positions
+# ---------------------------------------------------------------------------
+
+@router.get("/servo-positions")
+async def servo_positions() -> dict[str, Any]:
+    """Read raw positions of all servo motors on all follower arms.
+
+    Only works when NOT teleoperating/recording (serial port would be busy).
+    """
+    session = _session()
+    if session.state in ("teleoperating", "recording"):
+        return {"error": "busy", "arms": {}}
+    return await asyncio.to_thread(_read_servo_positions)
+
+
+def _read_servo_positions() -> dict[str, Any]:
+    from roboclaw.embodied.setup import load_setup
+    setup = load_setup()
+    arms = setup.get("arms", [])
+    result: dict[str, Any] = {"error": None, "arms": {}}
+    motor_names = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+
+    for arm in arms:
+        if "follower" not in arm.get("type", ""):
+            continue
+        alias = arm.get("alias", "")
+        port = arm.get("port", "")
+        if not port:
+            continue
+        try:
+            from lerobot.motors.feetech import FeetechMotorsBus
+            from lerobot.motors.motors_bus import Motor, MotorNormMode
+
+            motors = {
+                name: Motor(id=i + 1, model="sts3215", norm_mode=MotorNormMode.RANGE_M100_100)
+                for i, name in enumerate(motor_names)
+            }
+            bus = FeetechMotorsBus(port=port, motors=motors)
+            bus.connect()
+            positions = {}
+            for name in motor_names:
+                try:
+                    positions[name] = int(bus.read("Present_Position", name, normalize=False))
+                except Exception:
+                    positions[name] = None
+            bus.disconnect()
+            result["arms"][alias] = positions
+        except Exception as e:
+            result["arms"][alias] = {"error": str(e)}
+    return result
+
+
+# ---------------------------------------------------------------------------
 # WebSocket: status stream
 # ---------------------------------------------------------------------------
 

@@ -88,6 +88,9 @@ const translations = {
     startingTeleop: '启动遥操作中...',
     startingRecord: '启动录制中...',
     hwInitializing: '硬件初始化中，请稍候',
+    servoPositions: '舵机位置',
+    servoLoading: '正在读取舵机数据...',
+    servoBusy: '串口占用中，遥操作/录制结束后恢复',
   },
   en: {
     // Header
@@ -174,6 +177,9 @@ const translations = {
     startingTeleop: 'Starting teleop...',
     startingRecord: 'Starting recording...',
     hwInitializing: 'Initializing hardware, please wait',
+    servoPositions: 'Servo Positions',
+    servoLoading: 'Reading servo data...',
+    servoBusy: 'Serial port busy, will resume after teleop/recording stops',
   },
 } as const
 

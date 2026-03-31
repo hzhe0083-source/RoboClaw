@@ -1,7 +1,79 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDataCollection, type RobotState } from '../controllers/datacollection'
 import { useDashboard } from '../controllers/dashboard'
 import { useI18n } from '../controllers/i18n'
+
+// ── Servo chart colors ────────────────────────────────────────
+const SERVO_COLORS = [
+  '#0969da', '#1a7f37', '#cf222e', '#9a6700', '#8250df', '#bc4c00',
+]
+const MOTOR_NAMES = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper']
+const MAX_POINTS = 60
+
+interface ServoHistory {
+  [motor: string]: number[]
+}
+
+function ServoChart({ armAlias, history, busy }: { armAlias: string; history: ServoHistory; busy: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const w = canvas.width
+    const h = canvas.height
+
+    ctx.clearRect(0, 0, w, h)
+
+    // Background grid
+    ctx.strokeStyle = '#d0d7de'
+    ctx.lineWidth = 0.5
+    for (let y = 0; y < h; y += h / 4) {
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(w, y)
+      ctx.stroke()
+    }
+
+    // Draw each motor's line
+    MOTOR_NAMES.forEach((motor, idx) => {
+      const data = history[motor]
+      if (!data || data.length < 2) return
+      ctx.strokeStyle = SERVO_COLORS[idx]
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      const step = w / (MAX_POINTS - 1)
+      const offset = MAX_POINTS - data.length
+      for (let i = 0; i < data.length; i++) {
+        const x = (offset + i) * step
+        const y = h - (data[i] / 4096) * h
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      ctx.stroke()
+    })
+  }, [history])
+
+  return (
+    <div className="bg-sf border border-bd rounded-lg p-3">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-xs text-tx2 uppercase tracking-wider font-medium">{armAlias}</h4>
+        {busy && <span className="text-2xs text-yl">Serial busy</span>}
+      </div>
+      <canvas ref={canvasRef} width={400} height={120} className="w-full rounded bg-bg border border-bd" />
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+        {MOTOR_NAMES.map((name, idx) => (
+          <span key={name} className="text-2xs flex items-center gap-1">
+            <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: SERVO_COLORS[idx] }} />
+            {name}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ── Ghost button ──────────────────────────────────────────────
 type BtnVariant = 'gn' | 'rd' | 'yl' | 'ac'
@@ -83,6 +155,66 @@ function CameraPreviewPanel({
   )
 }
 
+function ServoChartPanel({ state, t }: { state: RobotState; t: (key: any) => string }) {
+  const [histories, setHistories] = useState<Record<string, ServoHistory>>({})
+  const busy = state === 'teleoperating' || state === 'recording'
+
+  const poll = useCallback(async () => {
+    if (busy) return
+    try {
+      const r = await fetch('/api/embodied/servo-positions')
+      const data = await r.json()
+      if (data.error || !data.arms) return
+      setHistories((prev) => {
+        const next = { ...prev }
+        for (const [alias, positions] of Object.entries(data.arms)) {
+          if (typeof positions !== 'object' || (positions as any).error) continue
+          const armHistory = { ...(next[alias] || {}) }
+          for (const motor of MOTOR_NAMES) {
+            const val = (positions as any)[motor]
+            if (val == null) continue
+            const arr = armHistory[motor] || []
+            armHistory[motor] = [...arr.slice(-(MAX_POINTS - 1)), val]
+          }
+          next[alias] = armHistory
+        }
+        return next
+      })
+    } catch { /* ignore */ }
+  }, [busy])
+
+  useEffect(() => {
+    if (busy) return
+    poll()
+    const timer = setInterval(poll, 500)
+    return () => clearInterval(timer)
+  }, [busy, poll])
+
+  const armNames = Object.keys(histories)
+  if (!armNames.length && !busy) {
+    return (
+      <div className="p-4">
+        <div className="text-sm text-tx2">{t('servoLoading')}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      <h3 className="text-xs text-tx2 uppercase tracking-wider font-medium">{t('servoPositions')}</h3>
+      {busy && (
+        <div className="text-sm text-yl flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-yl animate-pulse" />
+          {t('servoBusy')}
+        </div>
+      )}
+      {armNames.map((alias) => (
+        <ServoChart key={alias} armAlias={alias} history={histories[alias]} busy={busy} />
+      ))}
+    </div>
+  )
+}
+
 function canDo(state: RobotState) {
   const disc = state === 'disconnected'
   const conn = state === 'connected'
@@ -123,6 +255,14 @@ export default function DashboardView() {
   }
 
   const [camerasEnabled, setCamerasEnabled] = useState(true)
+
+  // Auto-close camera preview BEFORE teleop/record starts (release device for subprocess)
+  useEffect(() => {
+    if (loading === 'teleop' || loading === 'record') {
+      setCamerasEnabled(false)
+    }
+  }, [loading])
+
   const [dsName, setDsName] = useState('')
   const [task, setTask] = useState('')
   const [fps, setFps] = useState(30)
@@ -329,6 +469,9 @@ export default function DashboardView() {
               )}
             </div>
           </div>
+
+          {/* Servo position charts */}
+          <ServoChartPanel state={state} t={t} />
         </div>
 
         {/* Right sidebar */}
