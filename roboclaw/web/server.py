@@ -451,7 +451,18 @@ def create_app(
     ui_dist = Path(__file__).resolve().parent.parent.parent / "ui" / "dist"
     if ui_dist.is_dir():
         from starlette.staticfiles import StaticFiles
-        app.mount("/", StaticFiles(directory=str(ui_dist), html=True), name="ui")
+        from starlette.responses import FileResponse
+
+        # Static assets (js, css, images)
+        app.mount("/assets", StaticFiles(directory=str(ui_dist / "assets")), name="ui-assets")
+
+        # SPA fallback: any non-API path returns index.html for client-side routing
+        @app.get("/{full_path:path}")
+        async def _spa_fallback(full_path: str):
+            file_path = ui_dist / full_path
+            if file_path.is_file():
+                return FileResponse(str(file_path))
+            return FileResponse(str(ui_dist / "index.html"))
 
     # Store state for host/port access
     app.state.web_host = web_cfg["host"]
