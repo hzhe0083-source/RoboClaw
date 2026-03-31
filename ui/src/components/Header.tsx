@@ -26,9 +26,7 @@ export default function Header() {
 
       <span
         className={`inline-block px-2 py-0.5 rounded-sm text-2xs font-semibold tracking-wide ${
-          connected
-            ? 'bg-gn/15 text-gn'
-            : 'bg-rd/15 text-rd'
+          connected ? 'bg-gn/15 text-gn' : 'bg-rd/15 text-rd'
         }`}
       >
         {connected ? t('connected') : t('disconnected')}

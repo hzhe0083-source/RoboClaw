@@ -67,6 +67,11 @@ const translations = {
     stateConnected: '已连接',
     stateTeleoperating: '遥操作中',
     stateRecording: '录制中',
+
+    // Hardware
+    hwReady: '硬件就绪',
+    hwNotReady: '硬件未就绪',
+    hwUncalibrated: '未校准',
   },
   en: {
     // Header
@@ -132,6 +137,11 @@ const translations = {
     stateConnected: 'Connected',
     stateTeleoperating: 'Teleoperating',
     stateRecording: 'Recording',
+
+    // Hardware
+    hwReady: 'Hardware Ready',
+    hwNotReady: 'Hardware Not Ready',
+    hwUncalibrated: 'Uncalibrated',
   },
 } as const
 
