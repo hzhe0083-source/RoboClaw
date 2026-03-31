@@ -52,55 +52,11 @@ function canDo(state: RobotState) {
   }
 }
 
-// ── Hardware status bar ───────────────────────────────────────
-function HardwareBar() {
-  const { hardwareStatus, fetchHardwareStatus } = useDashboard()
-  const { t } = useI18n()
-
-  useEffect(() => {
-    fetchHardwareStatus()
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchHardwareStatus()
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [fetchHardwareStatus])
-
-  if (!hardwareStatus) return null
-
-  const arms = hardwareStatus.arms
-  const cams = hardwareStatus.cameras
-
-  return (
-    <div className={`flex items-center gap-3 px-4 py-1.5 border-b text-xs flex-wrap ${
-      hardwareStatus.ready ? 'border-gn/30 bg-gn/5' : 'border-rd/30 bg-rd/5'
-    }`}>
-      <span className={`px-2 py-0.5 rounded-sm text-2xs font-semibold ${
-        hardwareStatus.ready ? 'bg-gn/15 text-gn' : 'bg-rd/15 text-rd'
-      }`}>
-        {hardwareStatus.ready ? t('hwReady') : t('hwNotReady')}
-      </span>
-      {arms.map((a) => (
-        <span key={a.alias} className="text-tx2">
-          {a.alias}: <span className={a.connected ? 'text-gn' : 'text-rd'}>{a.connected ? '✓' : '✗'}</span>
-          {a.connected && !a.calibrated && <span className="text-yl ml-1">({t('hwUncalibrated')})</span>}
-        </span>
-      ))}
-      {cams.map((c) => (
-        <span key={c.alias} className="text-tx2">
-          {c.alias}: <span className={c.connected ? 'text-gn' : 'text-rd'}>{c.connected ? '✓' : '✗'}</span>
-        </span>
-      ))}
-      {!hardwareStatus.ready && hardwareStatus.missing.length > 0 && (
-        <span className="text-rd">{hardwareStatus.missing.join(', ')}</span>
-      )}
-    </div>
-  )
-}
-
 // ── Main View ─────────────────────────────────────────────────
 export default function DashboardView() {
   const store = useDataCollection()
   const { state, stats, episodeNum, logs, datasets } = store
+  const { hardwareStatus: hwStatus, fetchHardwareStatus } = useDashboard()
   const ok = canDo(state)
   const logRef = useRef<HTMLDivElement>(null)
   const { t } = useI18n()
@@ -127,7 +83,14 @@ export default function DashboardView() {
     store.connectStatusWs()
     store.loadDatasets()
     store.addLog('RoboClaw UI loaded')
-    return () => store.disconnectStatusWs()
+    fetchHardwareStatus()
+    const hwInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchHardwareStatus()
+    }, 5000)
+    return () => {
+      store.disconnectStatusWs()
+      clearInterval(hwInterval)
+    }
   }, [])
 
   useEffect(() => {
@@ -146,9 +109,6 @@ export default function DashboardView() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Hardware status */}
-      <HardwareBar />
-
       {/* Stats bar */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-bd text-sm flex-wrap">
         <span className={`px-2 py-0.5 rounded-sm text-xs font-semibold ${stateBadgeCls[state]}`}>
@@ -171,9 +131,31 @@ export default function DashboardView() {
 
           {/* Control grid */}
           <div className="grid grid-cols-2 gap-3 p-4 max-[900px]:grid-cols-1">
-            {/* Connection card */}
+            {/* Arms card */}
             <div className="bg-sf border border-bd rounded-lg p-4">
-              <h3 className="text-xs text-tx2 uppercase tracking-wider mb-2 font-medium">{t('connection')}</h3>
+              <h3 className="text-xs text-tx2 uppercase tracking-wider mb-2 font-medium">{t('arms')}</h3>
+              {hwStatus && hwStatus.arms.length > 0 ? (
+                <div className="space-y-2 mb-3">
+                  {hwStatus.arms.map((arm) => (
+                    <div key={arm.alias} className="flex items-center gap-2 text-sm">
+                      <span className={`w-2 h-2 rounded-full ${arm.connected ? 'bg-gn' : 'bg-rd'}`} />
+                      <span className="font-medium text-tx">{arm.alias}</span>
+                      <span className={`px-1.5 py-0.5 rounded-sm text-2xs font-semibold ${
+                        arm.role === 'leader' ? 'bg-ac/10 text-ac' : 'bg-gn/10 text-gn'
+                      }`}>
+                        {arm.role === 'leader' ? t('leader') : t('follower')}
+                      </span>
+                      {arm.connected && (
+                        <span className={`text-2xs ${arm.calibrated ? 'text-gn' : 'text-yl'}`}>
+                          {arm.calibrated ? t('hwCalibrated') : t('hwUncalibrated')}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-tx2 mb-3">{t('noArms')}</div>
+              )}
               <div className="flex gap-2 flex-wrap">
                 <Btn variant="gn" disabled={!ok.connect} onClick={store.doConnect}>
                   {t('connect')}
@@ -182,6 +164,26 @@ export default function DashboardView() {
                   {t('disconnect')}
                 </Btn>
               </div>
+            </div>
+
+            {/* Cameras card */}
+            <div className="bg-sf border border-bd rounded-lg p-4">
+              <h3 className="text-xs text-tx2 uppercase tracking-wider mb-2 font-medium">{t('cameras')}</h3>
+              {hwStatus && hwStatus.cameras.length > 0 ? (
+                <div className="space-y-2 mb-3">
+                  {hwStatus.cameras.map((cam) => (
+                    <div key={cam.alias} className="flex items-center gap-2 text-sm">
+                      <span className={`w-2 h-2 rounded-full ${cam.connected ? 'bg-gn' : 'bg-rd'}`} />
+                      <span className="font-medium text-tx">{cam.alias}</span>
+                      {cam.connected && (
+                        <span className="text-2xs text-tx2">{cam.width}x{cam.height}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-tx2 mb-3">{t('noCameras')}</div>
+              )}
             </div>
 
             {/* Teleop card */}

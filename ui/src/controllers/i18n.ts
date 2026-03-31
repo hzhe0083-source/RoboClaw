@@ -72,6 +72,15 @@ const translations = {
     hwReady: '硬件就绪',
     hwNotReady: '硬件未就绪',
     hwUncalibrated: '未校准',
+    arms: '机械臂',
+    cameras: '摄像头',
+    hwConnected: '已连接',
+    hwDisconnected: '未连接',
+    hwCalibrated: '已校准',
+    noArms: '未检测到机械臂',
+    noCameras: '未检测到摄像头',
+    leader: '主动臂',
+    follower: '从动臂',
   },
   en: {
     // Header
@@ -142,6 +151,15 @@ const translations = {
     hwReady: 'Hardware Ready',
     hwNotReady: 'Hardware Not Ready',
     hwUncalibrated: 'Uncalibrated',
+    arms: 'Arms',
+    cameras: 'Cameras',
+    hwConnected: 'Connected',
+    hwDisconnected: 'Disconnected',
+    hwCalibrated: 'Calibrated',
+    noArms: 'No arms detected',
+    noCameras: 'No cameras detected',
+    leader: 'Leader',
+    follower: 'Follower',
   },
 } as const
 
