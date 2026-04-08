@@ -1,0 +1,4 @@
+[submodule "vendor/lerobot"]
+	path = vendor/lerobot
+	url = https://github.com/Elvin-yk/lerobot-roboclaw.git
+	branch = roboclaw
