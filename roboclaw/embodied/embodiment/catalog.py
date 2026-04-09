@@ -20,6 +20,10 @@ class DeviceInfo:
     name: str
     roles: tuple[str, ...] = ()
 
+    def spec_name_for(self, role: str) -> str:
+        """Return spec name for a given role, e.g. 'so101_follower'."""
+        return f"{self.name}_{role}" if role else self.name
+
 
 def models_for(category: EmbodimentCategory) -> list[Any]:
     """Return all registered specs/infos for a category."""
