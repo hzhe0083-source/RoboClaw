@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -49,9 +50,12 @@ class Manifest:
         self._policies: dict[str, Any] = {}
         self._bindings: dict[str, Binding] = {}
         self._file_mtime: float = 0.0
+        self._last_sync_check: float = 0.0
         self._load()
 
     # ── Internal I/O ──────────────────────────────────────────────────
+
+    _SYNC_INTERVAL = 0.5  # seconds — skip stat() if checked recently
 
     def _file_mtime_on_disk(self) -> float:
         try:
@@ -59,14 +63,18 @@ class Manifest:
         except FileNotFoundError:
             return 0.0
 
-    def _sync_from_disk(self) -> None:
-        """Reload from disk if another process has written the file."""
+    def _maybe_reload(self) -> None:
+        """Reload from disk if another process has written the file.
+
+        Must be called with self._lock held.
+        """
+        now = time.monotonic()
+        if now - self._last_sync_check < self._SYNC_INTERVAL:
+            return
+        self._last_sync_check = now
         current = self._file_mtime_on_disk()
         if current > self._file_mtime:
-            with self._lock:
-                # Double-check after acquiring lock.
-                if self._file_mtime_on_disk() > self._file_mtime:
-                    self._load()
+            self._load()
 
     def _load(self) -> None:
         """Load from disk. Migrate setup.json -> manifest.json if needed."""
@@ -116,12 +124,10 @@ class Manifest:
         """Emit config change via Board. Fire-and-forget in async context."""
         if not self._board:
             return
-        import time as _time
-
         self._board.emit_sync(CH_CONFIG, {
             "change_type": change_type,
             "device_alias": device_alias,
-            "timestamp": _time.time(),
+            "timestamp": time.time(),
         })
 
     def _prune_guard(self, port: str) -> None:
@@ -175,36 +181,37 @@ class Manifest:
 
     @property
     def snapshot(self) -> dict[str, Any]:
-        self._sync_from_disk()
         with self._lock:
+            self._maybe_reload()
             return self._snapshot_unlocked()
 
     @property
     def arms(self) -> list[Binding]:
-        self._sync_from_disk()
         with self._lock:
+            self._maybe_reload()
             return [binding for binding in self._bindings.values() if binding.kind == "arm"]
 
     @property
     def cameras(self) -> list[Binding]:
-        self._sync_from_disk()
         with self._lock:
+            self._maybe_reload()
             return [binding for binding in self._bindings.values() if binding.kind == "camera"]
 
     @property
     def hands(self) -> list[Binding]:
-        self._sync_from_disk()
         with self._lock:
+            self._maybe_reload()
             return [binding for binding in self._bindings.values() if binding.kind == "hand"]
 
     @property
     def bindings(self) -> list[Binding]:
-        self._sync_from_disk()
         with self._lock:
+            self._maybe_reload()
             return list(self._bindings.values())
 
     def find_arm(self, alias: str) -> Binding | None:
         with self._lock:
+            self._maybe_reload()
             binding = self._bindings.get(alias)
             if binding is None or binding.kind != "arm":
                 return None
@@ -212,6 +219,7 @@ class Manifest:
 
     def find_camera(self, alias: str) -> Binding | None:
         with self._lock:
+            self._maybe_reload()
             binding = self._bindings.get(alias)
             if binding is None or binding.kind != "camera":
                 return None
@@ -219,6 +227,7 @@ class Manifest:
 
     def find_hand(self, alias: str) -> Binding | None:
         with self._lock:
+            self._maybe_reload()
             binding = self._bindings.get(alias)
             if binding is None or binding.kind != "hand":
                 return None
@@ -226,6 +235,7 @@ class Manifest:
 
     def find_binding(self, alias: str) -> Binding | None:
         with self._lock:
+            self._maybe_reload()
             return self._bindings.get(alias)
 
     def get_guard(self, port: str) -> InterfaceGuard | None:

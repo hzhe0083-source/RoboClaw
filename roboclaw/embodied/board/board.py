@@ -63,7 +63,7 @@ class Board:
 
     async def emit(self, channel: str, data: dict[str, Any]) -> None:
         """Publish *data* to *channel*. Notifies matching + wildcard subscribers."""
-        # Lazily capture the event loop on first async call.
+        # Board is constructed before the event loop starts; capture on first async call.
         if self._loop is None:
             self._loop = asyncio.get_running_loop()
         with self._lock:
@@ -82,20 +82,18 @@ class Board:
     def emit_sync(self, channel: str, data: dict[str, Any]) -> None:
         """Fire-and-forget emit for synchronous contexts (e.g. Manifest).
 
-        Safe to call from any thread — uses call_soon_threadsafe to
-        schedule the async emit on the event loop thread.
+        Safe to call from any thread. Uses the captured event loop
+        reference to schedule the async emit.
         """
-        # Fast path: already on the event loop thread.
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self.emit(channel, data))
             return
         except RuntimeError:
             pass
-        # Slow path: called from a worker thread (asyncio.to_thread, etc.).
         loop = self._loop
         if loop is not None and not loop.is_closed():
-            loop.call_soon_threadsafe(loop.create_task, self.emit(channel, data))
+            asyncio.run_coroutine_threadsafe(self.emit(channel, data), loop)
         else:
             logger.debug("emit_sync(): no event loop bound, event on '{}' dropped", channel)
 
