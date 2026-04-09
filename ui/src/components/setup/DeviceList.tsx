@@ -115,12 +115,16 @@ export default function DeviceList({ onCalibrate }: { onCalibrate?: (alias: stri
                 onRemove={() => removeArm(a.alias)}
               />
             </div>
-            {!a.calibrated && connected && onCalibrate && (
+            {connected && onCalibrate && (
               <button
                 onClick={() => onCalibrate(a.alias)}
-                className="shrink-0 px-2 py-1 text-2xs text-ac border border-ac/60 rounded hover:bg-ac/10"
+                className={`shrink-0 px-2 py-1 text-2xs rounded ${
+                  a.calibrated
+                    ? 'text-tx3 border border-bd/40 hover:text-ac hover:border-ac/60 hover:bg-ac/5'
+                    : 'text-ac border border-ac/60 hover:bg-ac/10'
+                }`}
               >
-                {t('calibrate')}
+                {a.calibrated ? t('recalibrate') : t('calibrate')}
               </button>
             )}
           </div>
