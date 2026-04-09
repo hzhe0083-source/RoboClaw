@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from roboclaw.embodied.engine import CalibrationSession
+from roboclaw.embodied.session.calibrate import CalibrationEngine as CalibrationSession
 from roboclaw.embodied.events import CalibrationStateChangedEvent, EventBus
 
 if TYPE_CHECKING:

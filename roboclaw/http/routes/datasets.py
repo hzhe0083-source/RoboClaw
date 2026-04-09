@@ -12,8 +12,13 @@ from roboclaw.http.dashboard_datasets import delete_dataset, get_dataset_info, l
 
 
 def _datasets_root(service: EmbodiedService) -> Path:
-    from roboclaw.embodied.engine.helpers import dataset_root
-    return dataset_root(service.manifest)
+    from roboclaw.embodied.command.helpers import dataset_path
+    from pathlib import Path
+    root = service.manifest.snapshot.get("datasets", {}).get("root", "")
+    if root:
+        return Path(root).expanduser()
+    from roboclaw.embodied.manifest.helpers import get_roboclaw_home
+    return get_roboclaw_home() / "workspace" / "embodied" / "datasets"
 
 
 def register_dataset_routes(app: FastAPI, service: EmbodiedService) -> None:

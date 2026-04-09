@@ -29,7 +29,7 @@ from roboclaw.embodied.manifest.helpers import (
     set_camera,
     set_hand,
 )
-from roboclaw.embodied.engine.helpers import dataset_path, group_arms, _resolve_arms
+from roboclaw.embodied.command.helpers import dataset_path, group_arms, resolve_action_arms as _resolve_arms
 from roboclaw.embodied.interface.serial import SerialInterface
 from roboclaw.embodied.interface.video import VideoInterface
 from roboclaw.embodied.sensor.camera import resolve_cameras as _resolve_cameras

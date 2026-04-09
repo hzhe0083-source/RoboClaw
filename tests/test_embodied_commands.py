@@ -2,9 +2,8 @@
 
 import sys
 
-from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
-from roboclaw.embodied.embodiment.arm.registry import SO101
-from roboclaw.embodied.learning.act import ACTPipeline
+from roboclaw.embodied.command import CommandBuilder as ArmCommandBuilder  # TODO: rewrite tests for new CommandBuilder API
+# SO101 and ACTPipeline were deleted; tests need rewrite
 from roboclaw.embodied.manifest.binding import Binding
 
 

@@ -1,9 +1,4 @@
-"""Unified service layer for all embodied operations.
-
-Every interface (Dashboard, CLI, Agent Tool) calls EmbodiedService.
-This is the single coordination point for embodiment locking, hardware
-monitor integration, and operation lifecycle.
-"""
+"""Unified service layer for all embodied operations."""
 
 from __future__ import annotations
 
@@ -11,28 +6,26 @@ import json
 import threading
 from typing import Any
 
-from roboclaw.embodied.engine import OperationEngine
-from roboclaw.embodied.engine.helpers import group_arms
+from roboclaw.embodied.board import Command, SessionState
+from roboclaw.embodied.board.board import IDLE_STATE
+from roboclaw.embodied.command import CommandBuilder, group_arms
 from roboclaw.embodied.events import EventBus
-from roboclaw.embodied.hardware.monitor import HardwareMonitor
 from roboclaw.embodied.hardware.monitor import (
-    ArmStatus,
-    CameraStatus,
-    check_arm_status,
-    check_camera_status,
+    ArmStatus, CameraStatus, HardwareMonitor,
+    check_arm_status, check_camera_status,
 )
 from roboclaw.embodied.manifest import Manifest
 from roboclaw.embodied.manifest.binding import Binding
+from roboclaw.embodied.session import (
+    InferSession, RecordSession, ReplaySession, Session,
+    TeleopSession, TrainSession,
+)
+from roboclaw.embodied.session.calibrate import (
+    CalibrationEngine, CalibrationSession as CalibrationCLI,
+)
 from roboclaw.embodied.service.calibration import CalibrationService
-from roboclaw.embodied.service.calibration_session import CalibrationSession as CalibrationCLI
-from roboclaw.embodied.service.doctor_service import DoctorService
-from roboclaw.embodied.service.hand_session import HandSession
-from roboclaw.embodied.service.infer_session import InferSession
-from roboclaw.embodied.service.record_session import RecordSession
-from roboclaw.embodied.service.replay_session import ReplaySession
-from roboclaw.embodied.service.setup_session import SetupSession
-from roboclaw.embodied.service.teleop_session import TeleopSession
-from roboclaw.embodied.service.train_session import TrainSession
+from roboclaw.embodied.service.doctor import DoctorService
+from roboclaw.embodied.session.setup import SetupSession
 
 
 class EmbodimentBusyError(RuntimeError):
@@ -70,13 +63,7 @@ class EmbodiedService:
 
     Two-layer mutex:
     - Layer 1: Embodiment lock — physical robot is one resource.
-      Owner is a string like "teleop", "recording", "calibrating", "scanning".
-    - Layer 2: Monitor coordination — recording_active lifecycle.
-
-    Sub-services:
-    - session: teleop/recording via OperationEngine
-    - calibration: arm calibration via CalibrationSession
-    - setup: hardware setup workflow via SetupSession
+    - Layer 2: Active session — only one operation at a time.
     """
 
     def __init__(
@@ -91,7 +78,7 @@ class EmbodiedService:
         self.manifest.ensure()
         self._lock = threading.Lock()
         self._embodiment_owner: str = ""
-        self._engine = OperationEngine(on_state_change=self._on_engine_state_change)
+        self._active_session: Session | None = None
         self._recording_started = False
 
         # Sub-services
@@ -102,7 +89,6 @@ class EmbodiedService:
         self.replay = ReplaySession(self)
         self.train = TrainSession(self)
         self.infer = InferSession(self)
-        self.hand = HandSession(self)
         self.doctor = DoctorService(self)
         self.calibration_session = CalibrationCLI(self)
 
@@ -110,7 +96,7 @@ class EmbodiedService:
     def event_bus(self) -> EventBus:
         return self._bus
 
-    # -- Embodiment lock ------------------------------------------------------
+    # -- Embodiment lock --
 
     @property
     def embodiment_busy(self) -> bool:
@@ -120,34 +106,43 @@ class EmbodiedService:
     @property
     def busy(self) -> bool:
         with self._lock:
-            return self._engine.busy or self._embodiment_owner != ""
+            active = self._active_session is not None and self._active_session.busy
+            return active or self._embodiment_owner != ""
 
     @property
     def busy_reason(self) -> str:
         with self._lock:
-            if self._engine.busy:
-                return self._engine.state
+            if self._active_session and self._active_session.busy:
+                return self._active_session.board.state.get("state", "unknown")
             return self._embodiment_owner
 
     def acquire_embodiment(self, owner: str) -> None:
         with self._lock:
-            if self._engine.busy or self._embodiment_owner:
-                reason = self._engine.state if self._engine.busy else self._embodiment_owner
+            active = self._active_session is not None and self._active_session.busy
+            if active or self._embodiment_owner:
+                reason = self._active_session.board.state.get("state", "") if active else self._embodiment_owner
                 raise EmbodimentBusyError(f"Embodiment busy: {reason}")
             self._embodiment_owner = owner
 
     def release_embodiment(self, owner: str = "") -> None:
-        """Release the embodiment lock. If owner is specified, only release if it matches."""
         with self._lock:
             if owner and self._embodiment_owner != owner:
                 return
             self._embodiment_owner = ""
 
+    # -- Status --
+
     def get_status(self) -> dict[str, Any]:
-        return self._engine.get_status()
+        if self._active_session:
+            return self._active_session.board.state
+        return dict(IDLE_STATE)
+
+    # -- Operations (Web entry points) --
 
     async def start_teleop(self, *, fps: int = 30) -> None:
-        await self._engine.start_teleop(fps=fps, setup=self.manifest)
+        argv = CommandBuilder.teleop(self.manifest, fps=fps)
+        self._active_session = self.teleop
+        await self.teleop.start(argv)
 
     async def start_recording(
         self,
@@ -157,14 +152,17 @@ class EmbodiedService:
         episode_time_s: int = 300,
         reset_time_s: int = 10,
     ) -> str:
-        dataset_name = await self._engine.start_recording(
+        argv, dataset_name = CommandBuilder.record(
+            self.manifest,
             task=task,
             num_episodes=num_episodes,
             fps=fps,
             episode_time_s=episode_time_s,
             reset_time_s=reset_time_s,
-            setup=self.manifest,
         )
+        await self.record.board.update(target_episodes=num_episodes, dataset=dataset_name)
+        self._active_session = self.record
+        await self.record.start(argv)
         self._recording_started = True
         if self._monitor is not None:
             self._monitor.set_recording_active(True)
@@ -177,9 +175,11 @@ class EmbodiedService:
         episode: int = 0,
         fps: int = 30,
     ) -> None:
-        await self._engine.start_replay(
-            dataset_name=dataset_name, episode=episode, fps=fps, setup=self.manifest,
+        argv = CommandBuilder.replay(
+            self.manifest, dataset_name=dataset_name, episode=episode, fps=fps,
         )
+        self._active_session = self.replay
+        await self.replay.start(argv, initial_state=SessionState.REPLAYING)
 
     async def start_inference(
         self,
@@ -190,28 +190,38 @@ class EmbodiedService:
         task: str = "eval",
         num_episodes: int = 1,
     ) -> None:
-        await self._engine.start_inference(
+        argv = CommandBuilder.infer(
+            self.manifest,
             checkpoint_path=checkpoint_path,
             source_dataset=source_dataset,
             dataset_name=dataset_name,
             task=task,
             num_episodes=num_episodes,
-            setup=self.manifest,
         )
+        self._active_session = self.infer
+        await self.infer.start(argv, initial_state=SessionState.INFERRING)
 
     async def stop(self) -> None:
-        await self._engine.stop()
+        if self._active_session:
+            await self._active_session.stop()
+            if self._recording_started:
+                self._recording_started = False
+                if self._monitor is not None:
+                    self._monitor.set_recording_active(False)
 
     async def save_episode(self) -> None:
-        await self._engine.save_episode()
+        if self._active_session:
+            self._active_session.board.post_command(Command.SAVE_EPISODE)
 
     async def discard_episode(self) -> None:
-        await self._engine.discard_episode()
+        if self._active_session:
+            self._active_session.board.post_command(Command.DISCARD_EPISODE)
 
     async def skip_reset(self) -> None:
-        await self._engine.skip_reset()
+        if self._active_session:
+            self._active_session.board.post_command(Command.SKIP_RESET)
 
-    # -- Delegated: calibration -----------------------------------------------
+    # -- Calibration (delegated) --
 
     async def start_calibration(self, arm_alias: str) -> dict[str, Any]:
         return await self.calibration.start(arm_alias)
@@ -231,12 +241,12 @@ class EmbodiedService:
     async def cancel_calibration(self) -> None:
         await self.calibration.cancel()
 
-    # -- Manifest mutations (atomic, busy-checked) ----------------------------
+    # -- Manifest mutations (kept identical) --
 
     def _require_not_busy(self) -> None:
-        """Raise if embodiment is busy. Must be called inside _lock or from sync context."""
-        if self._engine.busy or self._embodiment_owner:
-            reason = self._engine.state if self._engine.busy else self._embodiment_owner
+        active = self._active_session is not None and self._active_session.busy
+        if active or self._embodiment_owner:
+            reason = self._active_session.board.state.get("state", "") if active else self._embodiment_owner
             raise EmbodimentBusyError(f"Cannot modify config while busy: {reason}")
 
     def bind_arm(self, alias: str, arm_type: str, interface: Any) -> Binding:
@@ -284,7 +294,7 @@ class EmbodiedService:
             self._require_not_busy()
             return self.manifest.rename_hand(old_alias, new_alias)
 
-    # -- Queries ---------------------------------------------------------------
+    # -- Queries --
 
     def get_manifest_summary(self) -> str:
         snapshot = self.manifest.snapshot
@@ -299,35 +309,25 @@ class EmbodiedService:
         arm_statuses = [check_arm_status(arm) for arm in arms]
         camera_statuses = [check_camera_status(camera) for camera in cameras]
         ready, missing = _compute_readiness(arms, arm_statuses, camera_statuses)
+        active = self._active_session is not None and self._active_session.busy
         return {
             "ready": ready,
             "missing": missing,
             "arms": [status.to_dict() for status in arm_statuses],
             "cameras": [status.to_dict() for status in camera_statuses],
-            "session_busy": self._engine.busy,
+            "session_busy": active,
         }
 
     def read_servo_positions(self) -> dict[str, Any]:
         if self.busy:
             return {"error": "busy", "arms": {}}
         from roboclaw.embodied.hardware.motors import read_servo_positions
-
         return read_servo_positions(self.manifest.arms)
 
-    async def _on_engine_state_change(self, status: dict[str, Any]) -> None:
-        new_state = status.get("state", "idle")
-        if new_state == "idle" and self._recording_started:
-            self._recording_started = False
-            if self._monitor is not None:
-                self._monitor.set_recording_active(False)
-        from roboclaw.embodied.events import SessionStateChangedEvent
-
-        await self._bus.emit(SessionStateChangedEvent(**status))
-
-    # -- Shutdown -------------------------------------------------------------
+    # -- Shutdown --
 
     async def shutdown(self) -> None:
-        if self._engine.busy:
+        if self._active_session and self._active_session.busy:
             await self.stop()
         if self.calibration.active:
             await self.calibration.cancel()

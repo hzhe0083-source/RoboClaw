@@ -501,7 +501,7 @@ def _get_service(service: Any) -> Any:
 
 
 async def _run_with_service(service: Any, func: Any) -> str | list:
-    from roboclaw.embodied.engine.helpers import ActionError
+    from roboclaw.embodied.command import ActionError
 
     try:
         return await func(service.manifest)
