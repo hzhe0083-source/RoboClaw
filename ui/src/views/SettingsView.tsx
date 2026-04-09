@@ -7,6 +7,8 @@ import { useI18n } from '../controllers/i18n'
 import DeviceList from '../components/setup/DeviceList'
 import DiscoveryWizard from '../components/setup/DiscoveryWizard'
 import { TemperatureHeatMap } from '../components/TemperatureHeatMap'
+import { CalibrationPanel } from '../components/CalibrationPanel'
+import { postJson } from '../controllers/api'
 
 // Providers that make sense to show in the UI selector
 const UI_PROVIDERS = [
@@ -41,6 +43,7 @@ export default function SettingsView() {
   const { wizardActive, startWizard, loadDevices, loadCatalog } = useSetup()
   const { fetchHardwareStatus } = useDashboard()
 
+  const [calibratingArm, setCalibratingArm] = useState<string | null>(null)
   const [providerLoading, setProviderLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -148,8 +151,20 @@ export default function SettingsView() {
             )}
           </div>
 
-          <DeviceList />
+          <DeviceList onCalibrate={async (alias) => {
+            setCalibratingArm(alias)
+            await postJson('/api/calibration/start', { arm_alias: alias })
+          }} />
           {wizardActive && <div className="mt-4"><DiscoveryWizard /></div>}
+
+          {calibratingArm && (
+            <div className="mt-4">
+              <CalibrationPanel
+                armAlias={calibratingArm}
+                onClose={() => { setCalibratingArm(null); fetchHardwareStatus() }}
+              />
+            </div>
+          )}
 
           <div className="mt-4">
             <TemperatureHeatMap />

@@ -73,7 +73,7 @@ function dotColorForArm(connected: boolean, calibrated: boolean): string {
   return 'bg-gn'
 }
 
-export default function DeviceList() {
+export default function DeviceList({ onCalibrate }: { onCalibrate?: (alias: string) => void } = {}) {
   const { devices, removeArm, renameArm, removeCamera, renameCamera, removeHand, renameHand } =
     useSetup()
   const hwStatus = useDashboard((s) => s.hardwareStatus)
@@ -103,15 +103,30 @@ export default function DeviceList() {
             ? { label: t('hwCalibrated'), color: 'bg-gn' }
             : { label: t('hwUncalibrated'), color: 'bg-yl' }
         return (
-          <DeviceRow
-            key={a.alias}
-            alias={a.alias}
-            typeBadge={a.type}
-            dotColor={dotColor}
-            statusTag={statusTag}
-            onRename={(n) => renameArm(a.alias, n)}
-            onRemove={() => removeArm(a.alias)}
-          />
+          <div key={a.alias} className="flex items-center gap-1">
+            <div className="flex-1">
+              <DeviceRow
+                alias={a.alias}
+                typeBadge={a.type}
+                dotColor={dotColor}
+                statusTag={statusTag}
+                onRename={(n) => renameArm(a.alias, n)}
+                onRemove={() => removeArm(a.alias)}
+              />
+            </div>
+            {connected && onCalibrate && (
+              <button
+                onClick={() => onCalibrate(a.alias)}
+                className={`shrink-0 px-2 py-1 text-2xs rounded ${
+                  a.calibrated
+                    ? 'text-tx3 border border-bd/40 hover:text-ac hover:border-ac/60 hover:bg-ac/5'
+                    : 'text-ac border border-ac/60 hover:bg-ac/10'
+                }`}
+              >
+                {a.calibrated ? t('recalibrate') : t('calibrate')}
+              </button>
+            )}
+          </div>
         )
       }))}
 

@@ -54,7 +54,11 @@ class Session:
 
     # -- Lifecycle ---------------------------------------------------------
 
-    async def start(self, argv: list[str], *, initial_state: str = SessionState.PREPARING) -> None:
+    async def start(
+        self, argv: list[str], *,
+        initial_state: str = SessionState.PREPARING,
+        auto_confirm: bool = True,
+    ) -> None:
         """Start subprocess and wire consumers."""
         self._stopped = False
         self.board.reset()
@@ -63,8 +67,8 @@ class Session:
         # Launch interactive subprocess (stdin piped, stderr merged into stdout)
         self._process = await self._runner.run_streaming_interactive(argv)
 
-        # Auto-confirm any calibration prompts
-        if self._process.stdin:
+        # Auto-confirm calibration prompts for non-calibration sessions
+        if auto_confirm and self._process.stdin:
             self._process.stdin.write(b"\n\n\n\n")
             await self._process.stdin.drain()
 

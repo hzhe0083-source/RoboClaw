@@ -210,7 +210,24 @@ class EmbodiedService:
         if self._active_session:
             self.board.post_command(Command.SKIP_RESET)
 
-    # -- Calibration (delegated) --
+    # -- Calibration (web) --
+
+    async def start_calibration(self, arm_alias: str) -> dict[str, Any]:
+        """Start calibration subprocess for a single arm (web path)."""
+        arm = self.manifest.find_arm(arm_alias)
+        if arm is None:
+            raise RuntimeError(f"Arm '{arm_alias}' not found in manifest.")
+        self.acquire_embodiment("calibrating")
+        try:
+            await self.calibration.start_calibration(arm, self.manifest)
+        except Exception:
+            self.release_embodiment()
+            raise
+        return {"state": "calibrating", "arm_alias": arm_alias}
+
+    def post_calibration_command(self, command: str) -> None:
+        """Forward a calibration command to the Board."""
+        self.board.post_command(command)
 
     # -- Manifest mutations (kept identical) --
 

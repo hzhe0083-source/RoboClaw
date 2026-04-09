@@ -5,7 +5,7 @@ import { api, postJson } from './api'
 // Types
 // ---------------------------------------------------------------------------
 
-export type SessionState = 'idle' | 'preparing' | 'teleoperating' | 'recording' | 'replaying' | 'inferring'
+export type SessionState = 'idle' | 'preparing' | 'calibrating' | 'teleoperating' | 'recording' | 'replaying' | 'inferring'
 export type EpisodePhase = '' | 'recording' | 'saving' | 'resetting'
 
 export interface ArmStatus {
