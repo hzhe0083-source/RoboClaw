@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDashboard, type SessionState } from '../controllers/dashboard'
 import { useI18n } from '../controllers/i18n'
-import { ArmPairingPanel } from '../components/ArmPairingPanel'
 import { CameraPreviewPanel } from '../components/CameraPreviewPanel'
 import { ServoPanel } from '../components/ServoPanel'
 
@@ -68,7 +67,6 @@ export default function ControlView() {
   const [fps, setFps] = useState(30)
   const [useCameras, setUseCameras] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [selectedArms, setSelectedArms] = useState('')
   const [replayDataset, setReplayDataset] = useState('')
   const [replayEpisode, setReplayEpisode] = useState(0)
   const [inferCheckpoint, setInferCheckpoint] = useState('')
@@ -94,7 +92,6 @@ export default function ControlView() {
       dataset_name: datasetName.trim() || undefined,
       fps,
       use_cameras: useCameras,
-      arms: selectedArms || undefined,
     })
   }
 
@@ -192,12 +189,6 @@ export default function ControlView() {
               </div>
             )}
 
-            {/* Arm pairing — stopPropagation prevents card's onClick navigating to /settings */}
-            {hwStatus && hwStatus.arms.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-bd/40" onClick={e => e.stopPropagation()}>
-                <ArmPairingPanel arms={hwStatus.arms} onChange={setSelectedArms} />
-              </div>
-            )}
           </div>
 
           {/* Teleop */}
@@ -205,7 +196,7 @@ export default function ControlView() {
             <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('teleoperation')}</h3>
             <div className="space-y-2">
               <ActionBtn color="ac" disabled={!ok.teleopStart || !!loading}
-                onClick={() => store.doTeleopStart(selectedArms ? { arms: selectedArms } : undefined)}
+                onClick={() => store.doTeleopStart()}
                 title={busy ? busyReason : undefined}>
                 {loading === 'teleop' ? t('startingTeleop') : t('startTeleop')}
               </ActionBtn>
