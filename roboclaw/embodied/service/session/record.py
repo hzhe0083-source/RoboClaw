@@ -94,11 +94,11 @@ class RecordSession(Session):
             self._parent.acquire_embodiment("recording")
             try:
                 argv, self._dataset_name = CommandBuilder.record(manifest, **self._record_kwargs(kwargs))
+                await self.start(argv)
                 await self.board.update(
                     target_episodes=kwargs.get("num_episodes", 10),
                     dataset=self._dataset_name,
                 )
-                await self.start(argv)
                 from roboclaw.embodied.toolkit.tty import TtySession
 
                 return await TtySession(tty_handoff).run(self)
