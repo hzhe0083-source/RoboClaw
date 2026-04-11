@@ -76,24 +76,15 @@ export default function ControlView() {
   useEffect(() => {
     store.loadDatasets()
     store.fetchHardwareStatus()
-    const hwInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') store.fetchHardwareStatus()
+    store.fetchSessionStatus()
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        store.fetchHardwareStatus()
+        store.fetchSessionStatus()
+      }
     }, 5000)
-    return () => clearInterval(hwInterval)
+    return () => clearInterval(pollInterval)
   }, [])
-
-  function handleRecordStart() {
-    if (!task.trim()) { store.addLog(t('fillTaskDesc'), 'err'); return }
-    store.doRecordStart({
-      task: task.trim(),
-      num_episodes: numEp,
-      episode_time_s: episodeTime,
-      reset_time_s: resetTime,
-      dataset_name: datasetName.trim() || undefined,
-      fps,
-      use_cameras: useCameras,
-    })
-  }
 
   const stateLabel: Record<string, string> = {
     preparing: t('hwInitializing'),
@@ -113,6 +104,30 @@ export default function ControlView() {
   }
 
   const busy = state !== 'idle' && state !== 'error'
+
+  // Local elapsed timer — WS events stop after state transitions, so we tick locally
+  const [elapsedTick, setElapsedTick] = useState(0)
+  useEffect(() => {
+    setElapsedTick(Math.round(session.elapsed_seconds) || 0)
+  }, [session.elapsed_seconds])
+  useEffect(() => {
+    if (!busy) return
+    const interval = setInterval(() => setElapsedTick(t => t + 1), 1000)
+    return () => clearInterval(interval)
+  }, [busy])
+
+  function handleRecordStart() {
+    if (!task.trim()) { store.addLog(t('fillTaskDesc'), 'err'); return }
+    store.doRecordStart({
+      task: task.trim(),
+      num_episodes: numEp,
+      episode_time_s: episodeTime,
+      reset_time_s: resetTime,
+      dataset_name: datasetName.trim() || undefined,
+      fps,
+      use_cameras: useCameras,
+    })
+  }
   const busyReason = busy ? `${stateLabel[state] || state}${owner ? ` (${owner})` : ''}` : ''
   const hwAccent = !hwStatus ? 'shadow-inset-ac' : hwStatus.ready ? 'shadow-inset-gn' : 'shadow-inset-yl'
   const camerasExist = hwStatus && hwStatus.cameras.length > 0 && hwStatus.cameras.some((c: any) => c.connected)
@@ -175,7 +190,7 @@ export default function ControlView() {
               {hwStatus?.ready ? t('hwReady') : `${hwStatus?.missing?.length ?? 0} ${t('warnings')}`}
             </div>
 
-            {/* Embodiment status */}
+            {/* Embodiment status — local process or cross-process (agent) */}
             {busy && (
               <div className="mt-2 pt-2 border-t border-bd/40">
                 <div className="flex items-center gap-1.5">
@@ -183,9 +198,18 @@ export default function ControlView() {
                   <span className="text-xs font-semibold text-tx">{stateLabel[state] || state}</span>
                 </div>
                 <div className="text-2xs text-tx3 mt-0.5 font-mono">
-                  {session.elapsed_seconds > 0 && `${Math.round(session.elapsed_seconds)}s`}
+                  {elapsedTick > 0 && `${elapsedTick}s`}
                   {owner && ` · ${t('embodimentSource')}: ${owner}`}
                 </div>
+              </div>
+            )}
+            {!busy && owner && owner !== 'unknown' && (
+              <div className="mt-2 pt-2 border-t border-bd/40">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full animate-pulse bg-yl" />
+                  <span className="text-xs font-semibold text-tx">{owner}</span>
+                </div>
+                <div className="text-2xs text-tx3 mt-0.5 font-mono">{t('embodimentSource')}</div>
               </div>
             )}
 
