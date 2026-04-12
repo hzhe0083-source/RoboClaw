@@ -10,7 +10,7 @@ pytest.importorskip("fastapi")
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from roboclaw.embodied.web import workflow_routes
+from roboclaw.http import workflow_routes
 from roboclaw.embodied.workflow import exports as workflow_exports
 from roboclaw.embodied.workflow import service as workflow_service
 from roboclaw.embodied.workflow.state import (

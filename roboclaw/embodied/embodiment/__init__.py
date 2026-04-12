@@ -1,2 +1,7 @@
-# Embodiment Engine — hardware control, registry, safety.
-# Thin wrapper over LeRobot's robot/motor/camera abstractions.
+"""Embodiment — device type registry for hardware discovery and management."""
+
+from roboclaw.embodied.embodiment.hand.base import HandSpec
+
+__all__ = [
+    "HandSpec",
+]

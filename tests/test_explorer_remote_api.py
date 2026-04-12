@@ -6,7 +6,7 @@ pytest.importorskip("fastapi")
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from roboclaw.embodied.web import explorer_routes
+from roboclaw.http import explorer_routes
 
 
 def test_explorer_dashboard_uses_remote_payload(monkeypatch: pytest.MonkeyPatch) -> None:

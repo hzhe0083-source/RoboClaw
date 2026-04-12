@@ -178,7 +178,7 @@ def _resolve_remote_dataset_id(dataset_path: Path, info: dict[str, Any]) -> str:
     if isinstance(source_dataset, str) and source_dataset.strip():
         return source_dataset.strip()
     try:
-        from roboclaw.embodied.web.datasets import datasets_root
+        from roboclaw.http.dashboard_datasets import datasets_root
         root = datasets_root().resolve()
         resolved = dataset_path.resolve()
         if str(resolved).startswith(str(root) + "/"):

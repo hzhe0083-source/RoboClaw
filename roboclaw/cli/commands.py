@@ -335,11 +335,12 @@ def run_onboard_core(*, interactive: bool = True, skip_config: bool = False) -> 
         console.print(f"[green]✓[/green] Created workspace at {workspace}")
     sync_workspace_templates(workspace)
 
-    from roboclaw.embodied.setup import create_setup, get_setup_path
-    if not get_setup_path().exists():
+    from roboclaw.embodied.embodiment.manifest.helpers import get_manifest_path
+    if not get_manifest_path().exists():
         console.print("[dim]Scanning hardware...[/dim]")
-        create_setup()
-        from roboclaw.embodied.scan import scan_cameras, scan_serial_ports
+        from roboclaw.embodied.embodiment.manifest import Manifest
+        Manifest().ensure()
+        from roboclaw.embodied.embodiment.hardware.scan import scan_cameras, scan_serial_ports
         n_ports = len(scan_serial_ports())
         n_cameras = len(scan_cameras())
         console.print(f"[green]✓[/green] Embodied setup created ({n_ports} serial port(s), {n_cameras} camera(s) detected)")
@@ -638,7 +639,7 @@ def web_start(
         logging.basicConfig(level=logging.DEBUG)
 
     try:
-        from roboclaw.web.server import main as run_web_server
+        from roboclaw.http.server import main as run_web_server
     except ImportError as exc:
         console.print("[red]Error:[/red] Web dependencies are not installed.")
         console.print('Install them with: [cyan]pip install -e ".[web]"[/cyan]')
@@ -708,6 +709,10 @@ def agent(
             if _thinking:
                 _thinking.resume()
 
+    from roboclaw.embodied.service import EmbodiedService
+
+    embodied_service = EmbodiedService()
+
     agent_loop = AgentLoop(
         bus=bus,
         provider=provider,
@@ -723,6 +728,7 @@ def agent(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         tty_handoff=_embodied_tty_handoff,
+        embodied_service=embodied_service,
     )
 
     # Shared reference for progress callbacks
