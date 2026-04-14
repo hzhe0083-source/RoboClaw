@@ -199,7 +199,7 @@ class EmbodiedService:
         )
         self.acquire_embodiment("replaying")
         self._active_session = self.replay
-        await self.replay.start(argv, initial_state=SessionState.REPLAYING)
+        await self.replay.start(argv)
 
     async def start_inference(
         self,

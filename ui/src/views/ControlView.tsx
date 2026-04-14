@@ -416,6 +416,18 @@ export default function ControlView() {
                 {t('stopReplay')}
               </ActionBtn>
             </div>
+            {state === 'preparing' && owner === 'replaying' && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-yl font-medium">
+                <span className="w-2 h-2 rounded-full bg-yl animate-pulse" />
+                {prepareStage || t('statePreparing')}
+              </div>
+            )}
+            {state === 'replaying' && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-gn font-medium">
+                <span className="w-2 h-2 rounded-full bg-gn animate-pulse" />
+                {t('stateReplaying')}
+              </div>
+            )}
           </div>
 
           {/* Inference */}

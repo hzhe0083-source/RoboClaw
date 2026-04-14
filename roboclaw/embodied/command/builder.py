@@ -271,7 +271,7 @@ class CommandBuilder:
         if not followers:
             raise ActionError("No follower arms configured for replay.")
 
-        ds_path = dataset_path(manifest, dataset_name, _DEFAULT_REPLAY_ROOT)
+        ds_path = dataset_path(manifest, dataset_name)
         repo_id = f"local/{dataset_name}"
 
         argv = _wrapper_args("replay")
