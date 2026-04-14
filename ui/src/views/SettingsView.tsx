@@ -201,6 +201,9 @@ export default function SettingsView() {
       </div>
 
       <div className="flex-1 p-6 grid grid-cols-2 gap-6 items-start max-[900px]:grid-cols-1">
+        {/* Permissions card */}
+        {permissions && <PermissionPanel perms={permissions} onFixed={() => checkPermissions()} />}
+
         {/* Hardware section */}
         <section className="bg-sf rounded-xl p-5 shadow-card shadow-inset-ac">
           <div className="flex items-center justify-between mb-4">
@@ -214,10 +217,6 @@ export default function SettingsView() {
               </button>
             )}
           </div>
-
-          {permissions && (
-            <PermissionPanel perms={permissions} onFixed={() => checkPermissions()} />
-          )}
 
           <DeviceList onCalibrate={async (alias) => {
             setCalibratingArm(alias)

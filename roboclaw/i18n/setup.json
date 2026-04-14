@@ -139,6 +139,10 @@
     "zh": "当前用户 {user} 不在 dialout 组，无法访问串口。请执行: sudo usermod -aG dialout {user}，然后重新登录或重启服务。",
     "en": "User '{user}' is not in the 'dialout' group. Fix: sudo usermod -aG dialout {user} && re-login or restart the service."
   },
+  "permTitle": {
+    "zh": "设备权限",
+    "en": "Device Permissions"
+  },
   "permSerial": {
     "zh": "串口访问",
     "en": "Serial Port Access"
