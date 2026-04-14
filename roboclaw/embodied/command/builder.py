@@ -329,6 +329,7 @@ class CommandBuilder:
         dataset_name: str = "",
         task: str = "eval",
         num_episodes: int = 1,
+        episode_time_s: int = 60,
         arms: str = "",
         use_cameras: bool = True,
     ) -> list[str]:
@@ -375,6 +376,7 @@ class CommandBuilder:
             f"--dataset.single_task={task}",
             "--dataset.push_to_hub=false",
             f"--dataset.num_episodes={num_episodes}",
+            f"--dataset.episode_time_s={episode_time_s}",
         ]
         if resume:
             ds_args.append("--resume=true")

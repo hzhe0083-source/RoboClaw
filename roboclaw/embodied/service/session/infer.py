@@ -117,8 +117,8 @@ class InferSession(Session):
 # ── Private helpers ──────────────────────────────────────────────────────
 
 _INFER_KEYS = frozenset({
-    "checkpoint_path", "source_dataset", "dataset_name",
-    "task", "num_episodes", "arms", "use_cameras",
+    "checkpoint_path", "dataset_name",
+    "task", "num_episodes", "episode_time_s", "arms", "use_cameras",
 })
 
 

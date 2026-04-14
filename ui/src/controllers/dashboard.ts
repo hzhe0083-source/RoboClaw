@@ -162,7 +162,7 @@ interface DashboardStore {
   policies: Policy[]
 
   // Inference
-  doInferStart: (params: { checkpoint_path?: string; source_dataset?: string; num_episodes?: number }) => Promise<void>
+  doInferStart: (params: { checkpoint_path?: string; num_episodes?: number; episode_time_s?: number }) => Promise<void>
   doInferStop: () => Promise<void>
 
   // Hub

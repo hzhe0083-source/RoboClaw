@@ -70,7 +70,7 @@ export default function ControlView() {
   const [replayDataset, setReplayDataset] = useState('')
   const [replayEpisode, setReplayEpisode] = useState(0)
   const [inferCheckpoint, setInferCheckpoint] = useState('')
-  const [inferSourceDs, setInferSourceDs] = useState('')
+  const [inferEpisodeTime, setInferEpisodeTime] = useState(60)
   const [inferEpisodes, setInferEpisodes] = useState(1)
 
   useEffect(() => {
@@ -446,15 +446,10 @@ export default function ControlView() {
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
-                {t('sourceDataset')}
-                <select value={inferSourceDs} onChange={(e) => setInferSourceDs(e.target.value)}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac">
-                  <option value="">--</option>
-                  {datasets.filter(d => d.total_episodes && d.total_episodes > 0).map(d => (
-                    <option key={d.name} value={d.name}>{d.name}</option>
-                  ))}
-                </select>
+              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
+                {t('epTime')}
+                <input type="number" value={inferEpisodeTime} onChange={(e) => setInferEpisodeTime(Number(e.target.value) || 60)} min={10}
+                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
               </label>
               <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
                 {t('numEpisodes')}
@@ -464,7 +459,7 @@ export default function ControlView() {
             </div>
             <div className="flex gap-2">
               <ActionBtn color="ac" disabled={!ok.inferStart || !!loading || !inferCheckpoint}
-                onClick={() => store.doInferStart({ checkpoint_path: inferCheckpoint, source_dataset: inferSourceDs, num_episodes: inferEpisodes })}
+                onClick={() => store.doInferStart({ checkpoint_path: inferCheckpoint, num_episodes: inferEpisodes, episode_time_s: inferEpisodeTime })}
                 title={busy ? busyReason : undefined}>
                 {loading === 'infer' ? t('startingInference') : t('startInference')}
               </ActionBtn>

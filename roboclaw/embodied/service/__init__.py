@@ -205,18 +205,18 @@ class EmbodiedService:
         self,
         *,
         checkpoint_path: str = "",
-        source_dataset: str = "",
         dataset_name: str = "",
         task: str = "eval",
         num_episodes: int = 1,
+        episode_time_s: int = 60,
     ) -> None:
         argv = CommandBuilder.infer(
             self.manifest,
             checkpoint_path=checkpoint_path,
-            source_dataset=source_dataset,
             dataset_name=dataset_name,
             task=task,
             num_episodes=num_episodes,
+            episode_time_s=episode_time_s,
         )
         self.acquire_embodiment("inferring")
         self._active_session = self.infer
