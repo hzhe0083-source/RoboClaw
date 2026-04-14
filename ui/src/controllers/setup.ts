@@ -78,10 +78,24 @@ export function deviceLabel(device: { label?: string; dev?: string }): string {
   return device.label || device.dev || '?'
 }
 
+export interface PermissionStatus {
+  serial: { ok: boolean; count: number }
+  camera: { ok: boolean; count: number }
+  platform: string
+  fixed?: boolean
+  hint?: string
+}
+
 interface SetupStore {
   // Catalog
   catalog: Catalog | null
   loadCatalog: () => Promise<void>
+
+  // Permissions
+  permissions: PermissionStatus | null
+  permFixing: boolean
+  checkPermissions: () => Promise<PermissionStatus | null>
+  fixPermissions: () => Promise<void>
 
   // Wizard state
   wizardActive: boolean
@@ -131,6 +145,8 @@ let motionTimer: ReturnType<typeof setInterval> | null = null
 
 export const useSetup = create<SetupStore>((set, get) => ({
   catalog: null,
+  permissions: null,
+  permFixing: false,
   wizardActive: false,
   wizardStep: 'select' as WizardStep,
   selectedCategory: '',
@@ -142,6 +158,27 @@ export const useSetup = create<SetupStore>((set, get) => ({
   assignments: [],
   devices: { arms: [], cameras: [], hands: [] },
   error: null,
+
+  // -- Permissions --------------------------------------------------------------
+
+  checkPermissions: async () => {
+    try {
+      const data: PermissionStatus = await api(`${SETUP}/permissions`)
+      set({ permissions: data })
+      return data
+    } catch {
+      return null
+    }
+  },
+
+  fixPermissions: async () => {
+    set({ permFixing: true })
+    try {
+      const data: PermissionStatus = await postJson(`${SETUP}/permissions/fix`)
+      set({ permissions: data })
+    } catch { /* ignore */ }
+    set({ permFixing: false })
+  },
 
   // -- Catalog ----------------------------------------------------------------
 

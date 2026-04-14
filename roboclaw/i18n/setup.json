@@ -138,5 +138,41 @@
   "serialPermissionDenied": {
     "zh": "当前用户 {user} 不在 dialout 组，无法访问串口。请执行: sudo usermod -aG dialout {user}，然后重新登录或重启服务。",
     "en": "User '{user}' is not in the 'dialout' group. Fix: sudo usermod -aG dialout {user} && re-login or restart the service."
+  },
+  "permSerial": {
+    "zh": "串口访问",
+    "en": "Serial Port Access"
+  },
+  "permCamera": {
+    "zh": "摄像头访问",
+    "en": "Camera Access"
+  },
+  "permGranted": {
+    "zh": "已授权",
+    "en": "Granted"
+  },
+  "permDenied": {
+    "zh": "未授权",
+    "en": "Denied"
+  },
+  "permNoDevice": {
+    "zh": "未检测到设备",
+    "en": "No devices detected"
+  },
+  "permDeviceCount": {
+    "zh": "{count} 个设备",
+    "en": "{count} device(s)"
+  },
+  "permFix": {
+    "zh": "修复",
+    "en": "Fix"
+  },
+  "permFixing": {
+    "zh": "修复中...",
+    "en": "Fixing..."
+  },
+  "permFixFailed": {
+    "zh": "自动修复失败，请在终端执行以下命令后重启服务:",
+    "en": "Auto-fix failed. Run this command in terminal, then restart the service:"
   }
 }

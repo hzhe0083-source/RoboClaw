@@ -107,6 +107,37 @@ def list_serial_device_paths() -> list[str]:
     )
 
 
+def list_video_device_paths() -> list[str]:
+    """Return /dev/videoN paths present on the system."""
+    return sorted(glob.glob("/dev/video*"))
+
+
+def check_device_permissions() -> dict[str, dict[str, object]]:
+    """Check R/W access for serial and camera devices.
+
+    Returns ``{serial: {ok, count}, camera: {ok, count}, platform}``.
+    On non-Linux platforms serial/camera are always reported as ok.
+    """
+    if sys.platform != "linux":
+        return {
+            "serial": {"ok": True, "count": 0},
+            "camera": {"ok": True, "count": 0},
+            "platform": sys.platform,
+        }
+
+    serial_devs = list_serial_device_paths()
+    video_devs = list_video_device_paths()
+
+    serial_ok = all(os.access(d, os.R_OK | os.W_OK) for d in serial_devs) if serial_devs else True
+    camera_ok = all(os.access(d, os.R_OK | os.W_OK) for d in video_devs) if video_devs else True
+
+    return {
+        "serial": {"ok": serial_ok, "count": len(serial_devs)},
+        "camera": {"ok": camera_ok, "count": len(video_devs)},
+        "platform": "linux",
+    }
+
+
 
 def suppress_stderr() -> int:
     """Redirect stderr to /dev/null. Returns saved fd for restore_stderr."""

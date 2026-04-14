@@ -4,6 +4,7 @@ import { useI18n } from '../../controllers/i18n'
 import type { CatalogModel } from '../../controllers/setup'
 import ScanArea from './ScanArea'
 import DeviceNode from './DeviceNode'
+import PermissionPanel from './PermissionPanel'
 
 const STEPS = ['select', 'scan', 'identify', 'review'] as const
 const btnBack = 'px-4 py-1.5 text-sm text-tx2 hover:text-tx transition-colors'
@@ -90,13 +91,22 @@ function ModelSelect() {
 // -- Step 2: Scan ------------------------------------------------------------
 
 function ScanStep() {
-  const { scannedPorts, scannedCameras, scanning, doScan, goToStep } = useSetup()
-  useEffect(() => { doScan() }, [])
+  const { scannedPorts, scannedCameras, scanning, doScan, goToStep, checkPermissions, permissions } = useSetup()
+  const [permChecked, setPermChecked] = useState(false)
+
+  useEffect(() => {
+    checkPermissions().then((p) => {
+      setPermChecked(true)
+      if (!p || (p.serial.ok && p.camera.ok)) doScan()
+    })
+  }, [])
 
   const hasDevices = scannedPorts.length > 0 || scannedCameras.length > 0
-
   return (
     <div className="space-y-4">
+      {permChecked && permissions && (
+        <PermissionPanel perms={permissions} onFixed={doScan} />
+      )}
       <ScanArea ports={scannedPorts} cameras={scannedCameras} scanning={scanning} />
       <div className="flex justify-between pt-2">
         <button onClick={() => goToStep('select')} className={btnBack}>返回</button>

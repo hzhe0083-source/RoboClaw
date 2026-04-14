@@ -40,6 +40,29 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
     """Register /api/setup/* routes on the given app."""
     _map_service_errors(app)
 
+    # -- Permissions ------------------------------------------------------------
+
+    @app.get("/api/setup/permissions")
+    async def setup_permissions() -> dict[str, Any]:
+        from roboclaw.embodied.embodiment.hardware.scan import check_device_permissions
+        return await asyncio.to_thread(check_device_permissions)
+
+    @app.post("/api/setup/permissions/fix")
+    async def setup_permissions_fix() -> dict[str, Any]:
+        import os
+        from roboclaw.embodied.embodiment.hardware.scan import (
+            check_device_permissions, fix_serial_permissions,
+        )
+        fixed = await asyncio.to_thread(fix_serial_permissions)
+        status = await asyncio.to_thread(check_device_permissions)
+        status["fixed"] = fixed
+        if not fixed:
+            user = os.environ.get("USER", "$USER")
+            status["hint"] = f"sudo usermod -aG dialout,video {user}"
+        return status
+
+    # -- Scan -------------------------------------------------------------------
+
     @app.post("/api/setup/scan")
     async def setup_scan(body: ScanRequest | None = None) -> dict[str, Any]:
         model = body.model if body else ""
