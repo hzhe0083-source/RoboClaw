@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from pydantic import BaseModel
 
 from roboclaw.embodied.service import EmbodiedService
@@ -39,6 +40,17 @@ def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
             tty_handoff=None,
         )
         return {"message": result}
+
+    @app.get("/api/train/curve/{job_id}")
+    async def train_curve(job_id: str) -> dict[str, Any]:
+        try:
+            return service.train.curve_data(
+                manifest=service.manifest,
+                kwargs={"job_id": job_id},
+                tty_handoff=None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/train/datasets")
     async def train_datasets() -> dict[str, Any]:
