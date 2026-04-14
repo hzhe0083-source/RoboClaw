@@ -59,6 +59,19 @@ export default function ControlView() {
   const { t } = useI18n()
   const navigate = useNavigate()
 
+  function translateMissing(msg: string): string {
+    if (msg === 'No follower arm configured') return t('hwMissingNoFollower')
+    if (msg === 'No leader arm configured') return t('hwMissingNoLeader')
+    if (msg.includes('is disconnected') && msg.startsWith('Arm'))
+      return `${msg.match(/Arm '(.+?)'/)?.[1] ?? ''} ${t('hwMissingDisconnected')}`
+    if (msg.includes('is not calibrated'))
+      return `${msg.match(/Arm '(.+?)'/)?.[1] ?? ''} ${t('hwMissingNotCalibrated')}`
+    if (msg.includes('is disconnected') && msg.startsWith('Camera'))
+      return `${msg.match(/Camera '(.+?)'/)?.[1] ?? ''} ${t('hwMissingCameraDisconnected')}`
+    if (msg.includes('mismatch')) return t('hwMissingCountMismatch')
+    return msg
+  }
+
   const [task, setTask] = useState('')
   const [numEp, setNumEp] = useState(10)
   const [episodeTime, setEpisodeTime] = useState(300)
@@ -158,7 +171,7 @@ export default function ControlView() {
       )}
       {!hwReady && hwStatus && (
         <div className="px-4 py-2.5 bg-yl/8 border-b border-yl/20 text-yl text-sm font-medium">
-          {hwStatus.missing.join(' · ')}
+          {hwStatus.missing.map(translateMissing).join(' · ')}
         </div>
       )}
 
