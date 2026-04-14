@@ -53,7 +53,7 @@ function ActionBtn({
 export default function ControlView() {
   const store = useDashboard()
   const { session, datasets, loading, hardwareStatus: hwStatus } = store
-  const { state, episode_phase: episodePhase, saved_episodes: savedEpisodes, target_episodes: targetEpisodes, embodiment_owner: owner } = session
+  const { state, episode_phase: episodePhase, saved_episodes: savedEpisodes, target_episodes: targetEpisodes, embodiment_owner: owner, prepare_stage: prepareStage } = session
   const hwReady = hwStatus?.ready ?? false
   const ok = canDo(state, hwReady)
   const { t } = useI18n()
@@ -453,6 +453,12 @@ export default function ControlView() {
                 {t('stopInference')}
               </ActionBtn>
             </div>
+            {state === 'preparing' && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-yl font-medium">
+                <span className="w-2 h-2 rounded-full bg-yl animate-pulse" />
+                {prepareStage || t('statePreparing')}
+              </div>
+            )}
             {state === 'inferring' && (
               <div className="mt-2 flex items-center gap-2 text-xs text-ac font-medium">
                 <span className="w-2 h-2 rounded-full bg-ac animate-pulse" />
