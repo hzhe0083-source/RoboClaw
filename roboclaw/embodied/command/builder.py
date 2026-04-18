@@ -8,17 +8,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from roboclaw.embodied.embodiment.manifest.binding import Binding
-
 from roboclaw.embodied.command.helpers import (
     ActionError,
     dataset_path,
     group_arms,
-    logs_dir,
     resolve_action_arms,
     resolve_cameras,
     validate_dataset_name,
 )
+from roboclaw.embodied.embodiment.manifest.binding import ArmBinding, ArmRole, CameraBinding
 
 _BIMANUAL: dict[str, tuple[str, str]] = {
     "so101": ("bi_so_follower", "bi_so_leader"),
@@ -38,10 +36,10 @@ def _wrapper_args(action: str) -> list[str]:
     return [sys.executable, "-m", "roboclaw.embodied.command.wrapper", action]
 
 
-def _arm_args(prefix: str, binding: Binding) -> list[str]:
+def _arm_args(prefix: str, binding: ArmBinding) -> list[str]:
     """Single-arm CLI args: --{prefix}.type/port/calibration_dir/id."""
     return [
-        f"--{prefix}.type={binding.type_name}",
+        f"--{prefix}.type={binding.arm_type}",
         f"--{prefix}.id={binding.arm_id}",
         f"--{prefix}.port={binding.port}",
         f"--{prefix}.calibration_dir={Path(binding.calibration_dir).expanduser()}",
@@ -53,10 +51,10 @@ _PREFIX_TO_ROLE = {"robot": "followers", "teleop": "leaders"}
 
 def _bimanual_args(
     prefix: str,
-    left: Binding,
-    right: Binding,
+    left: ArmBinding,
+    right: ArmBinding,
     type_name: str,
-    cameras: list[Binding] | None = None,
+    cameras: list[CameraBinding] | None = None,
 ) -> list[str]:
     """Bimanual CLI args for one role (robot or teleop).
 
@@ -94,7 +92,7 @@ def _bimanual_args(
     return args
 
 
-def _arm_camera_dict(cameras: list[Binding], side: str) -> dict[str, dict[str, Any]]:
+def _arm_camera_dict(cameras: list[CameraBinding], side: str) -> dict[str, dict[str, Any]]:
     """Build the lerobot camera dict for one arm of a bimanual robot.
 
     Filters ``cameras`` by ``side`` and strips the ``{side}_`` prefix from
@@ -142,7 +140,7 @@ def _dataset_args(
 
 
 def _validate_pairing(
-    followers: list[Binding], leaders: list[Binding],
+    followers: list[ArmBinding], leaders: list[ArmBinding],
 ) -> None:
     """Raise ActionError if follower/leader pairing is invalid."""
     if not followers:
@@ -173,9 +171,9 @@ def _bimanual_family(type_name: str) -> str:
 
 
 def _robot_argv(
-    followers: list[Binding],
-    leaders: list[Binding] | None = None,
-    cameras: list[Binding] | None = None,
+    followers: list[ArmBinding],
+    leaders: list[ArmBinding] | None = None,
+    cameras: list[CameraBinding] | None = None,
 ) -> list[str]:
     """Build arm argv for robot (and optionally teleop) role.
 
@@ -189,7 +187,7 @@ def _robot_argv(
         if cameras:
             args.extend(_camera_args(resolve_cameras(cameras)))
     else:
-        family = _bimanual_family(followers[0].type_name)
+        family = followers[0].family
         bi_follower, bi_leader = _BIMANUAL[family]
         args.extend(_bimanual_args("robot", followers[0], followers[1], bi_follower, cameras))
         if leaders:
@@ -388,9 +386,9 @@ class CommandBuilder:
         return argv
 
     @staticmethod
-    def calibrate(arm: Binding) -> list[str]:
+    def calibrate(arm: ArmBinding) -> list[str]:
         """Build calibration argv for a single arm."""
-        prefix = "teleop" if arm.is_leader else "robot"
+        prefix = "teleop" if arm.role is ArmRole.LEADER else "robot"
         argv = _wrapper_args("calibrate")
         argv.extend(_arm_args(prefix, arm))
         return argv

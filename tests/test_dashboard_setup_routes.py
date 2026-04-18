@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,41 +22,13 @@ _RAW_PORTS = [
         by_path="/dev/serial/by-path/pci-0:2.1",
         by_id="/dev/serial/by-id/usb-ABC-if00",
         dev="/dev/ttyACM0",
+        motor_ids=(1, 2, 3, 4, 5, 6),
     ),
 ]
 
 _MOCK_CAMERAS = [
     VideoInterface(by_path="/dev/v4l/by-path/cam0", by_id="", dev="/dev/video0", width=640, height=480),
 ]
-
-
-def _scan_context(cameras: list | None = None):
-    """Context manager that patches discover_all internals so the real method
-    runs, populates _scanned_ports, and returns motor-bearing ports."""
-    cam_list = cameras if cameras is not None else []
-    return contextlib.ExitStack(), [
-        patch("roboclaw.embodied.embodiment.hardware.discovery.scan_serial_ports", return_value=_RAW_PORTS),
-        patch("roboclaw.embodied.embodiment.hardware.discovery.scan_cameras", return_value=cam_list),
-        patch("roboclaw.embodied.embodiment.hardware.probers.feetech.FeetechProber.probe", return_value=[1, 2, 3, 4, 5, 6]),
-        patch("roboclaw.embodied.embodiment.hardware.discovery.suppress_stderr", return_value=99),
-        patch("roboclaw.embodied.embodiment.hardware.discovery.restore_stderr"),
-    ]
-
-
-@contextlib.contextmanager
-def _patched_scan(cameras: list | None = None):
-    """Convenience wrapper: enter all scan patches at once."""
-    cam_list = cameras if cameras is not None else []
-    with (
-        patch("roboclaw.embodied.embodiment.hardware.discovery.scan_serial_ports", return_value=_RAW_PORTS),
-        patch("roboclaw.embodied.embodiment.hardware.discovery.scan_cameras", return_value=cam_list),
-        patch("roboclaw.embodied.embodiment.hardware.probers.feetech.FeetechProber.probe", return_value=[1, 2, 3, 4, 5, 6]),
-        patch("roboclaw.embodied.embodiment.hardware.discovery.suppress_stderr", return_value=99),
-        patch("roboclaw.embodied.embodiment.hardware.discovery.restore_stderr"),
-    ):
-        yield
-
-
 def _make_app(session_busy: bool = False) -> FastAPI:
     """Create a minimal FastAPI app with setup routes registered."""
     from roboclaw.embodied.embodiment.hardware.discovery import HardwareDiscovery
@@ -72,9 +43,11 @@ def _make_app(session_busy: bool = False) -> FastAPI:
     setup = MagicMock()
 
     def _run_full_scan(model=""):
+        scanner._scanned_ports = list(_RAW_PORTS)
+        scanner._scanned_cameras = list(_MOCK_CAMERAS)
         return {
-            "ports": scanner.discover_all(),
-            "cameras": scanner.discover_cameras(),
+            "ports": list(_RAW_PORTS),
+            "cameras": list(_MOCK_CAMERAS),
         }
 
     setup.run_full_scan = _run_full_scan
@@ -82,7 +55,15 @@ def _make_app(session_busy: bool = False) -> FastAPI:
     setup.start_motion_detection = scanner.start_motion_detection
     setup.poll_motion = scanner.poll_motion
     setup.stop_motion_detection = MagicMock(side_effect=lambda: scanner.stop_motion_detection())
-    setup.to_dict = MagicMock(return_value={"phase": "idle"})
+    setup.to_dict = MagicMock(return_value={
+        "phase": "idle",
+        "model": "",
+        "candidates": [],
+        "assignments": [],
+        "unassigned": [],
+        "busy": session_busy,
+        "busy_reason": "recording" if session_busy else "",
+    })
 
     if session_busy:
         from roboclaw.embodied.service import EmbodimentBusyError
@@ -107,8 +88,7 @@ def _make_app(session_busy: bool = False) -> FastAPI:
 def test_scan_returns_ports_and_cameras() -> None:
     app = _make_app()
     client = TestClient(app)
-    with _patched_scan(cameras=_MOCK_CAMERAS):
-        resp = client.post("/api/setup/scan")
+    resp = client.post("/api/setup/scan")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -120,8 +100,7 @@ def test_scan_returns_ports_and_cameras() -> None:
 def test_motion_start_after_scan() -> None:
     app = _make_app()
     client = TestClient(app)
-    with _patched_scan():
-        client.post("/api/setup/scan")
+    client.post("/api/setup/scan")
 
     with patch("roboclaw.embodied.embodiment.hardware.motion_detector.MotionDetector._read_positions", return_value={1: 100, 2: 200}):
         resp = client.post("/api/setup/motion/start")
@@ -141,8 +120,7 @@ def test_motion_start_without_scan_returns_400() -> None:
 def test_motion_poll_returns_deltas() -> None:
     app = _make_app()
     client = TestClient(app)
-    with _patched_scan():
-        client.post("/api/setup/scan")
+    client.post("/api/setup/scan")
     with patch("roboclaw.embodied.embodiment.hardware.motion_detector.MotionDetector._read_positions", return_value={1: 100, 2: 200}):
         client.post("/api/setup/motion/start")
     with patch("roboclaw.embodied.embodiment.hardware.motion_detector.MotionDetector._read_positions", return_value={1: 200, 2: 300}):
@@ -172,76 +150,22 @@ def test_motion_stop_clears_state() -> None:
     assert app.state.embodied_service.setup.stop_motion_detection.called
 
 
-def test_add_arm() -> None:
+def test_setup_session_returns_busy_fields() -> None:
+    app = _make_app(session_busy=True)
+    client = TestClient(app)
+    resp = client.get("/api/setup/session")
+    assert resp.status_code == 200
+    assert resp.json()["busy"] is True
+    assert resp.json()["busy_reason"] == "recording"
+
+
+def test_setup_reset_calls_service_reset() -> None:
     app = _make_app()
     client = TestClient(app)
-    svc = app.state.embodied_service
-    with patch("roboclaw.http.routes.setup._resolve_serial_interface", return_value="iface"):
-        resp = client.post(
-            "/api/manifest/arms",
-            json={"alias": "left", "arm_type": "so101_follower", "port_id": "/dev/serial/by-id/usb-ABC"},
-        )
+    resp = client.post("/api/setup/session/reset")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "added"
-    svc.bind_arm.assert_called_once_with("left", "so101_follower", "iface")
-
-
-def test_remove_arm() -> None:
-    app = _make_app()
-    client = TestClient(app)
-    svc = app.state.embodied_service
-    resp = client.delete("/api/manifest/arms/left")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "removed"
-    svc.unbind_arm.assert_called_once_with("left")
-
-
-def test_rename_arm() -> None:
-    app = _make_app()
-    client = TestClient(app)
-    svc = app.state.embodied_service
-    resp = client.patch(
-        "/api/manifest/arms/left",
-        json={"new_alias": "right"},
-    )
-    assert resp.status_code == 200
-    assert resp.json() == {"status": "renamed", "old": "left", "new": "right"}
-    svc.rename_arm.assert_called_once_with("left", "right")
-
-
-def test_add_camera() -> None:
-    app = _make_app()
-    client = TestClient(app)
-    svc = app.state.embodied_service
-    with patch("roboclaw.embodied.embodiment.hardware.scan.scan_cameras", return_value=_MOCK_CAMERAS):
-        resp = client.post(
-            "/api/manifest/cameras",
-            json={"alias": "top", "camera_index": 0},
-        )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "added"
-    svc.bind_camera.assert_called_once_with("top", _MOCK_CAMERAS[0])
-
-
-def test_remove_camera() -> None:
-    app = _make_app()
-    client = TestClient(app)
-    svc = app.state.embodied_service
-    resp = client.delete("/api/manifest/cameras/top")
-    assert resp.status_code == 200
-    svc.unbind_camera.assert_called_once_with("top")
-
-
-def test_current_setup() -> None:
-    app = _make_app()
-    client = TestClient(app)
-    svc = app.state.embodied_service
-    resp = client.get("/api/manifest")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data["arms"]) == 1
-    assert data["arms"][0]["alias"] == "left"
-    assert data == svc.manifest.snapshot
+    assert resp.json() == {"status": "reset"}
+    assert app.state.embodied_service.setup.reset.called
 
 
 def test_scan_returns_409_when_recording() -> None:

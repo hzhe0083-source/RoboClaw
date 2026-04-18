@@ -280,6 +280,7 @@ class SetupSession:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize session state for API responses."""
+        busy = self._parent.busy
         return {
             "phase": self._phase.value,
             "model": self._model,
@@ -296,6 +297,8 @@ class SetupSession:
                 for a in self._assignments
             ],
             "unassigned": [c.stable_id for c in self.unassigned],
+            "busy": busy,
+            "busy_reason": self._parent.busy_reason if busy else "",
         }
 
     # -- Prompting protocol (used by TtySession) ----------------------------
@@ -764,5 +767,4 @@ class SetupSession:
             )
         else:
             raise ValueError(f"Unknown spec type: {assignment.spec_name}")
-
 
