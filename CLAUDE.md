@@ -1,36 +1,10 @@
 # RoboClaw Agent 开发指南
 
-> 相关文档：
-> - 产品愿景：[`docs/product-vision.md`](docs/product-vision.md)
-> - 架构设计：[`docs/architecture.md`](docs/architecture.md)
-> - 架构对比（LeRobot / dimos / RoboClaw）：[`docs/architecture-comparison.md`](docs/architecture-comparison.md)
-
----
-
 运用第一性原理思考，拒绝经验主义和路径盲从，不要假设我完全清楚目标，保持审慎，从原始需求和问题出发，若目标模糊请停下和我讨论，若目标清晰但路径非最优，请直接建议更短、更低成本的办法。
 
 ---
 
-## 前置依赖
-
-建议安装 [Codex 插件](https://github.com/openai/codex-plugin-cc) 以启用 Claude + Codex 并行协作。
-
 ## 工作规范
-
-### 并行协作（Claude sub-agent + Codex sub-agent）
-
-所有非 trivial 的实现任务，必须起两个并行 **sub-agent** 写完全相同的代码：
-- **Claude sub-agent**：用 Agent tool 启动，`isolation: "worktree"` 在独立 git worktree 中工作。
-- **Codex sub-agent**：手动创建 git worktree（`git worktree add /tmp/roboclaw-codex-xxx HEAD`），然后用 `/codex:rescue` 在该 worktree 中执行。
-- 两个 sub-agent **同时启动**，写完全相同的任务。完成后对比两个版本，取各自优点合并到主分支。
-- 合并后清理所有 worktree。
-
-### 提交前双路审查
-
-commit 前必须跑两个 review（同样用 sub-agent 并行）：
-- **Claude sub-agent** 执行 `/simplify`：检查代码复用、质量、效率。发现问题直接修。
-- **Codex sub-agent** 执行 `/codex:review`：从独立视角审查，发现盲点。大的改动可追加 `/codex:adversarial-review` 挑战设计假设。
-- 审查必须覆盖本文件中的所有代码规范（缩进层数、文件行数、try/except、复用等），不能只看功能正确性。
 
 ### 架构原则
 
