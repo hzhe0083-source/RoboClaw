@@ -79,7 +79,20 @@ class TestSessionStatus:
     def test_status_fields(self, client):
         resp = client.get("/api/session/status")
         data = resp.json()
-        for field in ("state", "episode_phase", "saved_episodes", "target_episodes", "dataset"):
+        for field in (
+            "state",
+            "episode_phase",
+            "saved_episodes",
+            "target_episodes",
+            "dataset",
+            "calibration_mode",
+            "calibration_scope",
+            "calibration_phase",
+            "calibration_current_arm",
+            "calibration_index",
+            "calibration_total",
+            "calibration_results",
+        ):
             assert field in data
 
 
@@ -106,6 +119,44 @@ class TestSessionLifecycle:
         resp = client.post("/api/record/episode/discard")
         assert resp.status_code == 200
         assert resp.json() == {"status": "episode_discarded"}
+
+    def test_auto_calibration_start_returns_409_when_no_arms_exist(self, client):
+        resp = client.post("/api/calibration/auto/start")
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == "No arms configured."
+
+    def test_auto_calibration_stop_from_idle(self, client):
+        resp = client.post("/api/calibration/auto/stop")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok", "command": "stop"}
+
+    def test_auto_calibration_routes_delegate_to_service(self, client, app):
+        service = app.state.embodied_service
+
+        async def fake_start():
+            return {"state": "calibrating", "mode": "auto", "scope": "batch", "total": 2}
+
+        async def fake_stop():
+            return None
+
+        with patch.object(service, "start_auto_calibration", side_effect=fake_start) as start, patch.object(
+            service, "stop_auto_calibration", side_effect=fake_stop,
+        ) as stop:
+            resp = client.post("/api/calibration/auto/start")
+            assert resp.status_code == 200
+            assert resp.json() == {
+                "state": "calibrating",
+                "mode": "auto",
+                "scope": "batch",
+                "total": 2,
+            }
+
+            resp = client.post("/api/calibration/auto/stop")
+            assert resp.status_code == 200
+            assert resp.json() == {"status": "ok", "command": "stop"}
+
+        start.assert_called_once_with()
+        stop.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------

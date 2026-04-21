@@ -9,6 +9,7 @@ from typing import Any
 from roboclaw.data.datasets import DatasetCatalog, datasets_root_from_manifest
 from roboclaw.embodied.board import Board, Command, SessionState
 from roboclaw.embodied.board.board import IDLE_STATE
+from roboclaw.embodied.calibration import AutoCalibrationBatch
 from roboclaw.embodied.command import CommandBuilder
 from roboclaw.embodied.embodiment.hardware.monitor import (
     HardwareMonitor, check_arm_status, check_camera_status,
@@ -49,11 +50,13 @@ class EmbodiedService:
         self._lock = threading.Lock()
         self._file_lock = EmbodimentFileLock()
         self._embodiment_owner: str = ""
+        self._active_operation: Any | None = None
         self._active_session: Session | None = None
         self._recording_started = False
 
         # Sub-services
         self.calibration = CalibrationSession(self)
+        self.auto_calibration = AutoCalibrationBatch(board=self.board, manifest=self.manifest)
         self.setup = SetupSession(self)
         self.teleop = TeleopSession(self)
         self.record = RecordSession(self)
@@ -63,8 +66,15 @@ class EmbodiedService:
         self.hub = HubService(self)
         self.doctor = DoctorService(self)
 
-        for session in (self.teleop, self.record, self.replay, self.infer):
-            session._exit_callback = self._on_session_exit
+        for operation in (
+            self.calibration,
+            self.auto_calibration,
+            self.teleop,
+            self.record,
+            self.replay,
+            self.infer,
+        ):
+            operation._exit_callback = self._on_operation_exit
 
     # -- Embodiment lock --
 
@@ -86,8 +96,8 @@ class EmbodiedService:
             return reason
 
     def _busy_state_unlocked(self, default_reason: str = "") -> tuple[bool, str]:
-        """Return (busy, reason) using the active session's state or the owner string."""
-        if self._active_session is not None and self._active_session.busy:
+        """Return (busy, reason) using the active operation's state or the owner string."""
+        if self._active_operation is not None and self._active_operation.busy:
             return True, self.board.state.get("state", default_reason)
         if self._embodiment_owner:
             return True, self._embodiment_owner
@@ -125,23 +135,25 @@ class EmbodiedService:
     def clear_logs(self) -> None:
         self.board.clear_logs()
 
-    def _clear_recording_tracking(self, session: Session | None) -> None:
-        if session is self.record or (session is None and self._recording_started):
+    def _clear_recording_tracking(self, operation: Any | None) -> None:
+        if operation is self.record or (operation is None and self._recording_started):
             self._recording_started = False
             if self._monitor is not None:
                 self._monitor.set_recording_active(False)
 
-    def _finish_managed_session(self, session: Session | None, owner: str = "") -> None:
-        """Clear service session bookkeeping and release embodiment ownership."""
+    def _finish_active_operation(self, operation: Any | None, owner: str = "") -> None:
+        """Clear service operation bookkeeping and release embodiment ownership."""
         with self._lock:
-            if session is None or self._active_session is session:
+            if operation is None or self._active_operation is operation:
+                self._active_operation = None
+            if operation is None or self._active_session is operation or operation is self.auto_calibration:
                 self._active_session = None
-        self._clear_recording_tracking(session)
+        self._clear_recording_tracking(operation)
         self.release_embodiment(owner)
 
-    def _on_session_exit(self, session: Session) -> None:
-        """Called when a subprocess exits naturally (not via stop())."""
-        self._finish_managed_session(session)
+    def _on_operation_exit(self, operation: Any) -> None:
+        """Called when an operation exits naturally (not via stop())."""
+        self._finish_active_operation(operation)
 
     async def _start_managed_session(
         self,
@@ -151,11 +163,12 @@ class EmbodiedService:
         argv: list[str],
     ) -> None:
         self.acquire_embodiment(owner)
+        self._active_operation = session
         self._active_session = session
         try:
             await session.start(argv)
         except Exception:
-            self._finish_managed_session(session, owner)
+            self._finish_active_operation(session, owner)
             raise
 
     async def _run_managed_session(
@@ -173,12 +186,12 @@ class EmbodiedService:
             try:
                 return await TtySession(tty_handoff).run(session)
             finally:
-                self._finish_managed_session(session, owner)
+                self._finish_active_operation(session, owner)
         try:
             await session.wait()
             return session.result()
         finally:
-            self._finish_managed_session(session, owner)
+            self._finish_active_operation(session, owner)
 
     # -- Operations (Web entry points) --
 
@@ -312,25 +325,25 @@ class EmbodiedService:
 
     async def dismiss_error(self) -> None:
         """Clear error state and release embodiment lock so user can retry."""
-        self._finish_managed_session(self._active_session)
+        self._finish_active_operation(self._active_operation)
         await self.board.update(**IDLE_STATE)
 
     async def stop(self) -> None:
-        session = self._active_session
-        if session:
-            await session.stop()
-            self._finish_managed_session(session)
+        operation = self._active_operation
+        if operation:
+            await operation.stop()
+            self._finish_active_operation(operation)
 
     async def save_episode(self) -> None:
-        if self._active_session:
+        if self._active_operation is self.record:
             self.board.post_command(Command.SAVE_EPISODE)
 
     async def discard_episode(self) -> None:
-        if self._active_session:
+        if self._active_operation is self.record:
             self.board.post_command(Command.DISCARD_EPISODE)
 
     async def skip_reset(self) -> None:
-        if self._active_session:
+        if self._active_operation is self.record:
             self.board.post_command(Command.SKIP_RESET)
 
     # -- Calibration (web) --
@@ -341,17 +354,35 @@ class EmbodiedService:
         if arm is None:
             raise RuntimeError(f"Arm '{arm_alias}' not found in manifest.")
         self.acquire_embodiment("calibrating")
+        self._active_operation = self.calibration
+        self._active_session = self.calibration
         try:
             await self.calibration.start_calibration(arm, self.manifest)
         except Exception:
-            self.release_embodiment()
+            self._finish_active_operation(self.calibration, "calibrating")
             raise
         return {"state": "calibrating", "arm_alias": arm_alias}
 
     async def stop_calibration(self) -> None:
         """Properly terminate calibration subprocess (ESC → SIGINT → kill)."""
-        await self.calibration.stop()
-        self.release_embodiment()
+        await self.stop()
+
+    async def start_auto_calibration(self) -> dict[str, Any]:
+        arms = self.manifest.arms
+        if not arms:
+            raise RuntimeError("No arms configured.")
+        self.acquire_embodiment("calibrating")
+        self._active_operation = self.auto_calibration
+        self._active_session = None
+        try:
+            total = await self.auto_calibration.start(arms)
+        except Exception:
+            self._finish_active_operation(self.auto_calibration, "calibrating")
+            raise
+        return {"state": "calibrating", "mode": "auto", "scope": "batch", "total": total}
+
+    async def stop_auto_calibration(self) -> None:
+        await self.stop()
 
     def post_calibration_command(self, command: str) -> None:
         """Forward a calibration command to the Board."""
@@ -421,7 +452,7 @@ class EmbodiedService:
             manifest = self.manifest
         arm_statuses = [check_arm_status(arm) for arm in manifest.arms]
         camera_statuses = [check_camera_status(camera) for camera in manifest.cameras]
-        active = self._active_session is not None and self._active_session.busy
+        active = self._active_operation is not None and self._active_operation.busy
         return build_hardware_snapshot(
             manifest.arms,
             arm_statuses,
@@ -451,7 +482,7 @@ class EmbodiedService:
     # -- Shutdown --
 
     async def shutdown(self) -> None:
-        if self._active_session and self._active_session.busy:
+        if self._active_operation and self._active_operation.busy:
             await self.stop()
         if self.setup.motion_active:
             self.setup.stop_motion_detection()

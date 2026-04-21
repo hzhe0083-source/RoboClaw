@@ -9,6 +9,7 @@ import DiscoveryWizard from '@/domains/hardware/setup/components/DiscoveryWizard
 import PermissionPanel from '@/domains/hardware/setup/components/PermissionPanel'
 import { TemperatureHeatMap } from '@/domains/hardware/components/TemperatureHeatMap'
 import { CalibrationPanel } from '@/domains/hardware/components/CalibrationPanel'
+import AutoCalibrationPanel from '@/domains/hardware/components/AutoCalibrationPanel'
 import SettingsPageFrame from '@/domains/settings/components/SettingsPageFrame'
 
 function SummaryTile({
@@ -50,8 +51,10 @@ export default function HardwareSettingsPage() {
     devices,
   } = useSetup()
   const fetchHardwareStatus = useHardwareStore((state) => state.fetchHardwareStatus)
+  const fetchSessionStatus = useSessionStore((state) => state.fetchSessionStatus)
   const sessionState = useSessionStore((state) => state.session.state)
   const sessionCalArm = useSessionStore((state) => state.session.calibration_arm)
+  const sessionCalMode = useSessionStore((state) => state.session.calibration_mode)
   const hardwareStatus = useHardwareStore((state) => state.hardwareStatus)
   const [calibratingArm, setCalibratingArm] = useState<string | null>(null)
 
@@ -59,6 +62,7 @@ export default function HardwareSettingsPage() {
     const bootstrap = async () => {
       await loadCatalog()
       await loadDevices()
+      await fetchSessionStatus()
     }
     void bootstrap()
     void fetchHardwareStatus()
@@ -71,13 +75,18 @@ export default function HardwareSettingsPage() {
     }, 5000)
 
     return () => clearInterval(hwInterval)
-  }, [checkPermissions, fetchHardwareStatus, loadCatalog, loadDevices])
+  }, [checkPermissions, fetchHardwareStatus, fetchSessionStatus, loadCatalog, loadDevices])
 
   useEffect(() => {
-    if (sessionState === 'calibrating' && sessionCalArm && !calibratingArm) {
+    if (
+      sessionCalMode === 'manual'
+      && sessionState === 'calibrating'
+      && sessionCalArm
+      && !calibratingArm
+    ) {
       setCalibratingArm(sessionCalArm)
     }
-  }, [calibratingArm, sessionCalArm, sessionState])
+  }, [calibratingArm, sessionCalArm, sessionCalMode, sessionState])
 
   const uncalibratedArms = useMemo(
     () => devices.arms.filter((arm) => !arm.calibrated).length,
@@ -158,7 +167,7 @@ export default function HardwareSettingsPage() {
               </div>
 
               <div className="mt-5">
-                <DeviceList onCalibrate={async (alias) => {
+                <DeviceList onManualCalibrate={async (alias) => {
                   setCalibratingArm(alias)
                   await postJson('/api/calibration/start', { arm_alias: alias })
                 }} />
@@ -183,20 +192,26 @@ export default function HardwareSettingsPage() {
           <div className="space-y-6">
             <PermissionPanel onFixed={() => { void checkPermissions() }} />
 
+            <AutoCalibrationPanel onRefresh={async () => {
+              await fetchHardwareStatus()
+              await loadDevices()
+            }} />
+
             {calibratingArm ? (
               <section className="rounded-2xl border border-bd/30 bg-sf p-5 shadow-card">
                 <CalibrationPanel
                   armAlias={calibratingArm}
                   onClose={() => {
                     setCalibratingArm(null)
-                    fetchHardwareStatus()
+                    void fetchHardwareStatus()
+                    void loadDevices()
                   }}
                 />
               </section>
             ) : (
               <section className="rounded-2xl border border-bd/30 bg-sf p-5 shadow-card">
                 <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-tx">
-                  {t('calibrate')}
+                  {t('manualCalibrate')}
                 </h3>
                 <p className="mt-2 text-sm text-tx3">{t('settingsCalibrationHint')}</p>
               </section>

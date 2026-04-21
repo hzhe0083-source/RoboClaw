@@ -6,6 +6,7 @@ const TELEOP = '/api/teleop'
 const RECORD = '/api/record'
 const REPLAY = '/api/replay'
 const INFER = '/api/infer'
+const CALIBRATION = '/api/calibration'
 
 export type SessionState =
   | 'idle'
@@ -28,6 +29,16 @@ export type SessionLoading =
   | 'replay-stop'
   | 'infer'
   | 'infer-stop'
+  | 'auto-calibration'
+  | 'auto-calibration-stop'
+
+export interface CalibrationBatchItem {
+  alias: string
+  status: 'pending' | 'running' | 'success' | 'skipped' | 'failed'
+  reason: string
+  started_at: number | null
+  finished_at: number | null
+}
 
 export interface SessionStatus {
   state: SessionState
@@ -40,6 +51,14 @@ export interface SessionStatus {
   dataset: string | null
   rerun_web_port: number
   error: string
+  calibration_mode: '' | 'manual' | 'auto'
+  calibration_scope: '' | 'single' | 'batch'
+  calibration_phase: string
+  calibration_current_arm: string
+  calibration_index: number
+  calibration_total: number
+  calibration_results: CalibrationBatchItem[]
+  calibration_error: string
   calibration_step: string
   calibration_arm: string
   calibration_positions: Record<string, { min: number; pos: number; max: number }> | null
@@ -78,6 +97,8 @@ interface SessionStore {
     episode_time_s?: number
   }) => Promise<void>
   doInferStop: () => Promise<void>
+  doAutoCalibrationStart: () => Promise<void>
+  doAutoCalibrationStop: () => Promise<void>
   handleDashboardEvent: (event: any) => void
 }
 
@@ -92,6 +113,14 @@ const defaultSession: SessionStatus = {
   dataset: null,
   rerun_web_port: 0,
   error: '',
+  calibration_mode: '',
+  calibration_scope: '',
+  calibration_phase: '',
+  calibration_current_arm: '',
+  calibration_index: 0,
+  calibration_total: 0,
+  calibration_results: [],
+  calibration_error: '',
   calibration_step: '',
   calibration_arm: '',
   calibration_positions: null,
@@ -166,6 +195,9 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     doInferStart: (params) => runStart('infer', `${INFER}/start`, params),
     doInferStop: () => runStop('infer-stop', `${INFER}/stop`),
 
+    doAutoCalibrationStart: () => runStart('auto-calibration', `${CALIBRATION}/auto/start`),
+    doAutoCalibrationStop: () => runStop('auto-calibration-stop', `${CALIBRATION}/auto/stop`),
+
     handleDashboardEvent: (event) => {
       if (event.type !== 'dashboard.session.state_changed') {
         return
@@ -182,6 +214,14 @@ export const useSessionStore = create<SessionStore>((set, get) => {
           dataset: event.dataset || null,
           rerun_web_port: event.rerun_web_port || 0,
           error: event.error || '',
+          calibration_mode: event.calibration_mode || '',
+          calibration_scope: event.calibration_scope || '',
+          calibration_phase: event.calibration_phase || '',
+          calibration_current_arm: event.calibration_current_arm || '',
+          calibration_index: event.calibration_index ?? 0,
+          calibration_total: event.calibration_total ?? 0,
+          calibration_results: event.calibration_results || [],
+          calibration_error: event.calibration_error || '',
           calibration_step: event.calibration_step || '',
           calibration_arm: event.calibration_arm || '',
           calibration_positions: event.calibration_positions || null,

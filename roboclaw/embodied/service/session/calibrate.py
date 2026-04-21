@@ -51,15 +51,19 @@ class CalibrationOutputConsumer(OutputConsumer):
 
         low = line.lower()
         if "press enter to use provided calibration" in low:
-            await self.board.update(state=SessionState.CALIBRATING, calibration_step="choose")
+            await self.board.update(
+                state=SessionState.CALIBRATING,
+                calibration_step="choose",
+                calibration_phase="choose",
+            )
         elif "running calibration" in low:
-            await self.board.update(calibration_step="starting")
+            await self.board.update(calibration_step="starting", calibration_phase="starting")
         elif "move" in low and "middle" in low and "press enter" in low:
-            await self.board.update(calibration_step="homing")
+            await self.board.update(calibration_step="homing", calibration_phase="homing")
         elif "recording positions" in low and "press enter to stop" in low:
-            await self.board.update(calibration_step="recording")
+            await self.board.update(calibration_step="recording", calibration_phase="recording")
         elif "calibration saved" in low:
-            await self.board.update(calibration_step="done")
+            await self.board.update(calibration_step="done", calibration_phase="done")
 
 
 class CalibrationInputConsumer(InputConsumer):
@@ -101,7 +105,22 @@ class CalibrationSession(Session):
         argv = CommandBuilder.calibrate(arm)
         await self.start(argv, initial_state=SessionState.CALIBRATING, auto_confirm=False)
         # Set after start() — start() calls board.reset() which would clear it
-        await self.board.update(calibration_arm=arm.alias)
+        await self.board.update(
+            calibration_mode="manual",
+            calibration_scope="single",
+            calibration_phase="starting",
+            calibration_current_arm=arm.alias,
+            calibration_index=1,
+            calibration_total=1,
+            calibration_results=[{
+                "alias": arm.alias,
+                "status": "running",
+                "reason": "",
+                "started_at": None,
+                "finished_at": None,
+            }],
+            calibration_arm=arm.alias,
+        )
 
     async def _wait_process(self) -> None:
         """Finalize calibration only after lerobot saves the standard JSON."""
@@ -130,12 +149,37 @@ class CalibrationSession(Session):
             try:
                 _mark_calibration_success(self._arm, self._cal_manifest)
             except Exception as exc:
-                await self.board.update(state=SessionState.ERROR, error=str(exc))
+                await self.board.update(
+                    state=SessionState.ERROR,
+                    error=str(exc),
+                    calibration_phase="failed",
+                    calibration_error=str(exc),
+                    calibration_results=[{
+                        "alias": self._arm.alias if self._arm else "",
+                        "status": "failed",
+                        "reason": str(exc),
+                        "started_at": None,
+                        "finished_at": None,
+                    }],
+                )
                 return
 
-            await self.board.update(state=SessionState.IDLE)
+            await self.board.update(
+                state=SessionState.IDLE,
+                calibration_phase="done",
+                calibration_results=[{
+                    "alias": self._arm.alias if self._arm else "",
+                    "status": "success",
+                    "reason": "",
+                    "started_at": None,
+                    "finished_at": None,
+                }],
+            )
         finally:
-            self._parent.release_embodiment()
+            if self._exit_callback and not self._stopped:
+                self._exit_callback(self)
+            elif not self._exit_callback:
+                self._parent.release_embodiment()
 
     # -- CLI protocol (used by TtySession when invoked from agent) ---------
 
