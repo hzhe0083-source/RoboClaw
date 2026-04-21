@@ -6,15 +6,37 @@ import { useHubTransferStore } from '@/domains/hub/store/useHubTransferStore'
 import { LossCurvePanel } from '@/domains/training/components/LossCurvePanel'
 import { useI18n } from '@/i18n'
 
+const POLICY_TYPES = [
+  'act',
+  'diffusion',
+  'groot',
+  'multi_task_dit',
+  'pi0',
+  'pi0_fast',
+  'pi05',
+  'reward_classifier',
+  'sac',
+  'sarm',
+  'smolvla',
+  'tdmpc',
+  'vqbet',
+  'wall_x',
+  'xvla',
+]
+
 export default function TrainingCenterPage() {
   const datasets = useDatasetsStore((state) => state.datasets)
   const loadDatasets = useDatasetsStore((state) => state.loadDatasets)
   const session = useSessionStore((state) => state.session)
   const policies = useTrainingStore((state) => state.policies)
   const loadPolicies = useTrainingStore((state) => state.loadPolicies)
+  const restoreCurrentTrainJob = useTrainingStore((state) => state.restoreCurrentTrainJob)
   const doTrainStart = useTrainingStore((state) => state.doTrainStart)
+  const doTrainStop = useTrainingStore((state) => state.doTrainStop)
+  const currentTrainJobId = useTrainingStore((state) => state.currentTrainJobId)
   const trainJobMessage = useTrainingStore((state) => state.trainJobMessage)
   const trainingLoading = useTrainingStore((state) => state.trainingLoading)
+  const trainingStopLoading = useTrainingStore((state) => state.trainingStopLoading)
   const hubLoading = useHubTransferStore((state) => state.hubLoading)
   const hubProgress = useHubTransferStore((state) => state.hubProgress)
   const pushPolicy = useHubTransferStore((state) => state.pushPolicy)
@@ -23,6 +45,7 @@ export default function TrainingCenterPage() {
   const runtimeDatasets = datasets.filter((dataset) => dataset.capabilities.can_train && dataset.runtime)
 
   const [trainDataset, setTrainDataset] = useState('')
+  const [policyType, setPolicyType] = useState('act')
   const [trainSteps, setTrainSteps] = useState(100000)
   const [trainDevice, setTrainDevice] = useState('cuda')
   const [pullPolicyRepo, setPullPolicyRepo] = useState('')
@@ -30,7 +53,8 @@ export default function TrainingCenterPage() {
   useEffect(() => {
     void loadDatasets()
     void loadPolicies()
-  }, [loadDatasets, loadPolicies])
+    void restoreCurrentTrainJob()
+  }, [loadDatasets, loadPolicies, restoreCurrentTrainJob])
 
   const promptPushPolicy = (value: string) => {
     const repoId = prompt(t('enterRepoId'))
@@ -59,7 +83,19 @@ export default function TrainingCenterPage() {
                 <option key={d.id} value={d.runtime!.name}>{d.label}</option>
               ))}
             </select>
-            <div className="flex gap-3 mb-3">
+            <div className="flex gap-3 mb-3 max-[700px]:flex-col">
+              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
+                {t('policyType')}
+                <select
+                  value={policyType}
+                  onChange={(e) => setPolicyType(e.target.value)}
+                  className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-ac"
+                >
+                  {POLICY_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
               <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
                 {t('steps')}
                 <input type="number" value={trainSteps} onChange={(e) => setTrainSteps(Number(e.target.value) || 100000)}
@@ -74,16 +110,31 @@ export default function TrainingCenterPage() {
                 </select>
               </label>
             </div>
-            <button
-              disabled={(session.state !== 'idle' && session.state !== 'error') || !trainDataset || !!trainingLoading}
-              onClick={() => {
-                void doTrainStart({ dataset_name: trainDataset, steps: trainSteps, device: trainDevice })
-              }}
-              className="w-full px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-ac hover:bg-ac2 shadow-glow-ac
-                transition-all active:scale-[0.97] disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none"
-            >
-              {trainingLoading ? t('startingTraining') : t('startTraining')}
-            </button>
+            <div className="flex gap-3 max-[520px]:flex-col">
+              <button
+                disabled={(session.state !== 'idle' && session.state !== 'error') || !trainDataset || !!trainingLoading}
+                onClick={() => {
+                  void doTrainStart({
+                    dataset_name: trainDataset,
+                    policy_type: policyType,
+                    steps: trainSteps,
+                    device: trainDevice,
+                  })
+                }}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-ac hover:bg-ac2 shadow-glow-ac
+                  transition-all active:scale-[0.97] disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none"
+              >
+                {trainingLoading ? t('startingTraining') : t('startTraining')}
+              </button>
+              <button
+                disabled={!currentTrainJobId || !!trainingStopLoading}
+                onClick={() => { void doTrainStop() }}
+                className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-rd hover:bg-rd/90
+                  transition-all active:scale-[0.97] disabled:opacity-25 disabled:cursor-not-allowed"
+              >
+                {trainingStopLoading ? t('stoppingTraining') : t('stopTraining')}
+              </button>
+            </div>
             {trainJobMessage && (
               <div className="mt-3 text-xs text-tx2 font-mono bg-bg rounded-lg p-2.5 break-all">
                 {trainJobMessage}
