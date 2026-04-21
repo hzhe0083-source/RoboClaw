@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -16,6 +18,7 @@ from lerobot.motors.motors_bus import Motor, MotorNormMode
 
 from roboclaw.embodied.calibration.model import CalibrationProfile, MotorCalibrationProfile
 from roboclaw.embodied.calibration.store import CalibrationStore
+from roboclaw.embodied.embodiment.manifest.binding import ArmBinding
 
 POSITION_MIN = 0
 POSITION_MAX = 4095
@@ -496,14 +499,10 @@ class _SO101AutoCalibrator:
         return orig_min, orig_max
 
     def _persist_backup(self, orig_limits: dict[str, tuple[int, int]]) -> None:
-        import json
-
         with open(EEPROM_BACKUP_PATH, "w", encoding="utf-8") as handle:
             json.dump({name: [lo, hi] for name, (lo, hi) in orig_limits.items()}, handle)
 
     def _clear_backup(self) -> None:
-        import os
-
         if os.path.exists(EEPROM_BACKUP_PATH):
             os.remove(EEPROM_BACKUP_PATH)
 
@@ -569,7 +568,7 @@ class SO101AutoCalibrationStrategy:
 
     def recalibrate(
         self,
-        arm: object,
+        arm: ArmBinding,
         store: CalibrationStore,
         *,
         stop_event: Event | None = None,
@@ -577,7 +576,7 @@ class SO101AutoCalibrationStrategy:
         baseline = store.load_profile(arm)
         self._validate_baseline(arm, baseline)
 
-        calibrator = _SO101AutoCalibrator(getattr(arm, "port"), stop_event=stop_event)
+        calibrator = _SO101AutoCalibrator(arm.port, stop_event=stop_event)
         probed = calibrator.calibrate()
 
         merged = dict(baseline.motors)
@@ -592,10 +591,9 @@ class SO101AutoCalibrationStrategy:
             )
         return CalibrationProfile(merged)
 
-    def _validate_baseline(self, arm: object, profile: CalibrationProfile) -> None:
+    def _validate_baseline(self, arm: ArmBinding, profile: CalibrationProfile) -> None:
         missing = [name for name in (*self.RANGE_MOTORS, "wrist_roll") if name not in profile.motors]
         if missing:
-            alias = getattr(arm, "alias", "<unknown>")
             raise RuntimeError(
-                f"Calibration profile for {alias} is missing baseline motors: {', '.join(missing)}"
+                f"Calibration profile for {arm.alias} is missing baseline motors: {', '.join(missing)}"
             )

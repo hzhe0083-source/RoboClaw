@@ -36,7 +36,6 @@ class AutoCalibrationBatch:
         self._store = store or CalibrationStore()
         self._strategy = strategy or SO101AutoCalibrationStrategy()
         self._task: asyncio.Task[None] | None = None
-        self._stopped = False
         self._stop_event = Event()
         self._exit_callback: Any = None
 
@@ -47,7 +46,6 @@ class AutoCalibrationBatch:
     async def start(self, arms: list[ArmBinding]) -> int:
         items = self._plan(arms)
         owner = self.board.get("embodiment_owner", "")
-        self._stopped = False
         self._stop_event.clear()
         self.board.reset()
         await self.board.update(
@@ -71,7 +69,6 @@ class AutoCalibrationBatch:
         if not self.busy:
             await self.board.update(state=SessionState.IDLE, calibration_phase="")
             return
-        self._stopped = True
         self._stop_event.set()
         await self.board.update(state=SessionState.STOPPING, calibration_phase="stopping")
         if self._task is not None:
@@ -216,7 +213,7 @@ class AutoCalibrationBatch:
                 error=str(exc),
             )
         finally:
-            if self._exit_callback and not self._stopped:
+            if self._exit_callback and not self._stop_event.is_set():
                 self._exit_callback(self)
 
     def _mark_remaining_stopped(self, items: list[_BatchItem], start_index: int) -> list[_BatchItem]:
