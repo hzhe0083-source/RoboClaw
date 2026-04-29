@@ -210,21 +210,7 @@ class HardwareMonitor:
     def stop(self) -> None:
         self._stop_event.set()
 
-    async def run(self) -> None:
-        """Main loop: check hardware every N seconds until stopped."""
-        logger.info("Hardware monitor started")
-        while not self._stop_event.is_set():
-            await self._tick()
-            try:
-                await asyncio.wait_for(
-                    self._stop_event.wait(), timeout=_CHECK_INTERVAL_SECONDS
-                )
-                break  # stop_event was set
-            except asyncio.TimeoutError:
-                pass  # normal interval elapsed
-        logger.info("Hardware monitor stopped")
-
-    async def _tick(self) -> None:
+    async def run_check_once(self) -> None:
         """Run one check cycle, diff against active faults, emit events."""
         current_faults = self.check_hardware()
         current_keys = {_fault_key(f): f for f in current_faults}

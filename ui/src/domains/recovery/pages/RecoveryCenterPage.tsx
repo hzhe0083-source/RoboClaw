@@ -8,16 +8,17 @@ export default function RecoveryCenterPage() {
   const { t } = useI18n()
   const toast = useToast((state) => state.add)
   const faults = useRecoveryStore((state) => state.faults)
+  const hasCheckedHardware = useRecoveryStore((state) => state.hasCheckedHardware)
+  const checkingHardware = useRecoveryStore((state) => state.checkingHardware)
   const restarting = useRecoveryStore((state) => state.restarting)
-  const fetchFaults = useRecoveryStore((state) => state.fetchFaults)
+  const checkHardware = useRecoveryStore((state) => state.checkHardware)
   const restartDashboard = useRecoveryStore((state) => state.restartDashboard)
   const devices = useSetup((state) => state.devices)
   const loadDevices = useSetup((state) => state.loadDevices)
 
   useEffect(() => {
-    void fetchFaults()
     void loadDevices()
-  }, [fetchFaults, loadDevices])
+  }, [loadDevices])
 
   const hardwareRows = useMemo(
     () => [
@@ -49,6 +50,14 @@ export default function RecoveryCenterPage() {
     }
   }
 
+  async function handleHardwareCheck(): Promise<void> {
+    try {
+      await checkHardware()
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('recoveryCheckHardwareFailed'), 'e')
+    }
+  }
+
   function faultFor(faultType: string, alias: string) {
     return faultMap.get(`${faultType}:${alias}`)
   }
@@ -62,6 +71,9 @@ export default function RecoveryCenterPage() {
   }
 
   function motorStatus(alias: string): { text: string; tone: string } {
+    if (!hasCheckedHardware) {
+      return { text: '--', tone: 'text-tx3' }
+    }
     const fault = faultFor('arm_motor_disconnected', alias)
     if (!fault) {
       return { text: t('recoveryStatusNormal'), tone: 'text-gn' }
@@ -124,6 +136,16 @@ export default function RecoveryCenterPage() {
                 </p>
               </div>
             </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => { void handleHardwareCheck() }}
+                disabled={checkingHardware}
+                className="rounded-full bg-ac px-4 py-2 text-sm font-semibold text-white shadow-glow-ac transition-all hover:bg-ac2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {checkingHardware ? t('recoveryCheckingHardware') : t('recoveryCheckHardware')}
+              </button>
+            </div>
 
             {hardwareRows.length === 0 ? (
               <section className="rounded-2xl border border-bd/50 bg-white p-6 shadow-card">
@@ -133,6 +155,33 @@ export default function RecoveryCenterPage() {
               <section className="rounded-2xl border border-bd/50 bg-white p-5 shadow-card">
                 <div className="space-y-3">
                   {hardwareRows.map((device) => {
+                    if (!hasCheckedHardware) {
+                      return (
+                        <div
+                          key={device.key}
+                          className="rounded-xl border border-bd/40 bg-sf px-4 py-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-tx">{device.alias}</span>
+                            <span className="rounded bg-white px-1.5 py-0.5 text-2xs font-mono text-tx2 border border-bd/40">
+                              {device.badge}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid gap-2 text-sm text-tx2 md:grid-cols-3">
+                            <div><span className="text-tx3">{t('recoverySerialConnection')}：</span><span className="text-tx3">--</span></div>
+                            {device.kind === 'arm' ? (
+                              <>
+                                <div><span className="text-tx3">{t('recoveryCalibrationStatus')}：</span><span className="text-tx3">--</span></div>
+                                <div><span className="text-tx3">{t('recoveryMotorWiring')}：</span><span className="text-tx3">--</span></div>
+                              </>
+                            ) : (
+                              <div><span className="text-tx3">{t('camera')}：</span><span className="text-tx3">--</span></div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    }
+
                     const serialOk = !faultFor(
                       device.kind === 'arm' ? 'arm_disconnected' : 'camera_disconnected',
                       device.alias,
@@ -182,7 +231,7 @@ export default function RecoveryCenterPage() {
                   })}
                 </div>
 
-                {faults.length === 0 && (
+                {hasCheckedHardware && faults.length === 0 && (
                   <div className="mt-4 rounded-xl border border-gn/20 bg-gn/5 px-4 py-3 text-sm text-gn">
                     {t('recoveryNoFaultsDesc')}
                   </div>

@@ -64,7 +64,6 @@ export default function AppShell() {
   const location = useLocation()
   const { connect, disconnect, connected, messages } = useChatSocket()
   const fetchHardwareStatus = useHardwareStore((state) => state.fetchHardwareStatus)
-  const fetchRecoveryFaults = useRecoveryStore((state) => state.fetchFaults)
   const recoveryFaults = useRecoveryStore((state) => state.faults)
   const { t } = useI18n()
   const [chatOpen, setChatOpen] = useState(false)
@@ -77,8 +76,7 @@ export default function AppShell() {
 
   useEffect(() => {
     void fetchHardwareStatus()
-    void fetchRecoveryFaults()
-  }, [fetchHardwareStatus, fetchRecoveryFaults])
+  }, [fetchHardwareStatus])
 
   const navItems = [
     { path: '/control', label: t('controlCenter') },
