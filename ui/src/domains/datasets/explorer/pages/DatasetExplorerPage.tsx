@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useI18n } from '@/i18n'
 import {
+  buildExplorerQuery,
   buildExplorerRefKey,
   listExplorerDatasets,
   searchDatasetSuggestions,
@@ -167,18 +168,6 @@ function getNearestTrajectoryIndex(detail: EpisodeDetail, videoCurrentTime: numb
   const duration = detail.summary.duration_s || 1
   const progress = Math.min(Math.max(videoCurrentTime / duration, 0), 1)
   return Math.round(progress * (totalPoints - 1))
-}
-
-function buildExplorerQuery(ref: ExplorerDatasetRef): string {
-  const params = new URLSearchParams()
-  params.set('source', ref.source)
-  if (ref.dataset) {
-    params.set('dataset', ref.dataset)
-  }
-  if (ref.path) {
-    params.set('path', ref.path)
-  }
-  return params.toString()
 }
 
 function EpisodeHoverPreview({
@@ -696,13 +685,19 @@ function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef }) {
       const requestToken = ++requestTokenRef.current
       try {
         const response = await fetch(
-          `/api/explorer/episode?${buildExplorerQuery(datasetRef)}&episode_index=${episodeIndex}`,
+          `/api/explorer/episode?${buildExplorerQuery(datasetRef)}&episode_index=${episodeIndex}&preview=true`,
         )
         if (!response.ok) {
           throw new Error(`Failed to load episode preview (${response.status})`)
         }
         const detail: EpisodeDetail = await response.json()
         previewCacheRef.current.set(episodeIndex, detail)
+        if (previewCacheRef.current.size > 20) {
+          const oldestEpisodeIndex = previewCacheRef.current.keys().next().value
+          if (oldestEpisodeIndex !== undefined) {
+            previewCacheRef.current.delete(oldestEpisodeIndex)
+          }
+        }
         if (requestToken === requestTokenRef.current) {
           setHoveredPreview(detail)
         }
@@ -763,7 +758,6 @@ function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef }) {
               }
             }}
             onMouseEnter={() => scheduleHoverPreview(ep.episode_index)}
-            onMouseMove={() => scheduleHoverPreview(ep.episode_index)}
             onMouseLeave={scheduleClosePreview}
           >
             <span className="explorer-episode-item__idx">#{ep.episode_index}</span>
@@ -1095,6 +1089,7 @@ export default function DatasetExplorerView() {
     if (!nextRef.dataset && !nextRef.path) {
       return
     }
+    setPageState({ prepareError: '' })
     if (nextSource === 'remote' && nextRef.dataset) {
       setPageState({
         datasetIdInput: nextRef.dataset,
@@ -1115,8 +1110,14 @@ export default function DatasetExplorerView() {
     setDatasetSuggestions([])
     setHighlightedSuggestionIndex(-1)
     await loadDataset(nextRef)
-    if (nextRef.dataset) {
-      await selectDataset(nextRef.dataset).catch(() => {})
+    if (nextRef.source !== 'remote' && nextRef.dataset) {
+      try {
+        await selectDataset(nextRef.dataset)
+      } catch (error) {
+        setPageState({
+          prepareError: error instanceof Error ? error.message : t('qualityRunFailed'),
+        })
+      }
     }
   }
 
