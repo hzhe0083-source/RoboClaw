@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n'
 import {
   useExplorer,
   type EpisodeDetail,
+  type ExplorerDatasetRef,
   type FeatureStat,
   type ModalityItem,
 } from '@/domains/datasets/explorer/store/useExplorerStore'
@@ -577,6 +578,7 @@ function EpisodeBrowser() {
   } = useExplorer()
   const episodes = episodePage?.episodes ?? []
   const selectedDataset = episodePage?.dataset ?? ''
+  const selectedDatasetRef: ExplorerDatasetRef = { source: 'remote', dataset: selectedDataset }
   const hoverTimerRef = useRef<number | null>(null)
   const closeTimerRef = useRef<number | null>(null)
   const requestTokenRef = useRef(0)
@@ -711,7 +713,7 @@ function EpisodeBrowser() {
             type="button"
             className="explorer-episodes__pager"
             disabled={episodePage!.page <= 1 || episodePageLoading}
-            onClick={() => void loadEpisodePage(selectedDataset, episodePage!.page - 1, episodePage!.page_size)}
+            onClick={() => void loadEpisodePage(selectedDatasetRef, episodePage!.page - 1, episodePage!.page_size)}
           >
             Prev
           </button>
@@ -719,7 +721,7 @@ function EpisodeBrowser() {
             type="button"
             className="explorer-episodes__pager"
             disabled={episodePage!.page >= episodePage!.total_pages || episodePageLoading}
-            onClick={() => void loadEpisodePage(selectedDataset, episodePage!.page + 1, episodePage!.page_size)}
+            onClick={() => void loadEpisodePage(selectedDatasetRef, episodePage!.page + 1, episodePage!.page_size)}
           >
             Next
           </button>
@@ -739,7 +741,7 @@ function EpisodeBrowser() {
               if (selectedEpisodeIndex === ep.episode_index) {
                 clearEpisode()
               } else {
-                void selectEpisode(selectedDataset || '', ep.episode_index)
+                void selectEpisode(selectedDatasetRef, ep.episode_index)
               }
             }}
             onMouseEnter={() => scheduleHoverPreview(ep.episode_index)}
@@ -868,19 +870,20 @@ export default function DatasetExplorerView() {
   } = useExplorer()
   const [datasetIdInput, setDatasetIdInput] = useState('')
   const currentDataset = selectedDataset || summary?.dataset || dashboard?.dataset || episodePage?.dataset || ''
+  const currentDatasetRef: ExplorerDatasetRef = { source: 'remote', dataset: currentDataset }
 
   useEffect(() => {
     if (!currentDataset) {
       return
     }
     if (summary?.dataset !== currentDataset) {
-      void loadSummary(currentDataset).catch(() => {})
+      void loadSummary(currentDatasetRef).catch(() => {})
     }
     if (dashboard?.dataset !== currentDataset) {
-      void loadDashboard(currentDataset).catch(() => {})
+      void loadDashboard(currentDatasetRef).catch(() => {})
     }
     if (episodePage?.dataset !== currentDataset) {
-      void loadEpisodePage(currentDataset, 1, 50)
+      void loadEpisodePage(currentDatasetRef, 1, 50)
     }
   }, [currentDataset, summary?.dataset, dashboard?.dataset, episodePage?.dataset, loadSummary, loadDashboard, loadEpisodePage])
 
@@ -889,10 +892,11 @@ export default function DatasetExplorerView() {
     if (!datasetId) {
       return
     }
+    const datasetRef: ExplorerDatasetRef = { source: 'remote', dataset: datasetId }
     await Promise.allSettled([
-      loadSummary(datasetId),
-      loadDashboard(datasetId),
-      loadEpisodePage(datasetId, 1, 50),
+      loadSummary(datasetRef),
+      loadDashboard(datasetRef),
+      loadEpisodePage(datasetRef, 1, 50),
     ])
     try {
       await selectDataset(datasetId)
