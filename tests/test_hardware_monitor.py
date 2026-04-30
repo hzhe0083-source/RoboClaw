@@ -83,22 +83,39 @@ class TestCheckArms:
         assert len(faults) == 1
         assert faults[0].fault_type == FaultType.ARM_DISCONNECTED
 
-    def test_port_exists_but_not_calibrated(self, tmp_path):
+    def test_port_exists_but_not_calibrated(self, tmp_path, monkeypatch):
         port_file = tmp_path / "ttyUSB0"
         port_file.touch()
+        monkeypatch.setattr(monitor_mod, "get_missing_arm_motors", lambda arm: [])
         arms = [self._arm_binding(str(port_file), False)]
         faults: list[HardwareFault] = []
         _check_arms(arms, time.time(), faults)
         assert len(faults) == 1
         assert faults[0].fault_type == FaultType.ARM_NOT_CALIBRATED
 
-    def test_port_exists_and_calibrated(self, tmp_path):
+    def test_port_exists_and_calibrated(self, tmp_path, monkeypatch):
         port_file = tmp_path / "ttyUSB0"
         port_file.touch()
+        monkeypatch.setattr(monitor_mod, "get_missing_arm_motors", lambda arm: [])
         arms = [self._arm_binding(str(port_file), True)]
         faults: list[HardwareFault] = []
         _check_arms(arms, time.time(), faults)
         assert faults == []
+
+    def test_port_exists_but_motor_missing(self, tmp_path, monkeypatch):
+        port_file = tmp_path / "ttyUSB0"
+        port_file.touch()
+        monkeypatch.setattr(
+            monitor_mod,
+            "get_missing_arm_motors",
+            lambda arm: ["shoulder pan"],
+        )
+        arms = [self._arm_binding(str(port_file), True)]
+        faults: list[HardwareFault] = []
+        _check_arms(arms, time.time(), faults)
+        assert len(faults) == 1
+        assert faults[0].fault_type == FaultType.ARM_MOTOR_DISCONNECTED
+        assert faults[0].message == "shoulder pan"
 
     def test_missing_port_skips_calibration_check(self, tmp_path):
         """If port is missing, only ARM_DISCONNECTED is reported (not also uncalibrated)."""

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import time
-from unittest.mock import patch, PropertyMock
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -225,7 +225,12 @@ class TestHardwareStatus:
         )
         app.state.hardware_monitor._active_faults = {"camera_disconnected:wrist": fault}
 
-        resp = client.get("/api/recovery/faults")
+        with patch.object(
+            app.state.hardware_monitor,
+            "run_check_once",
+            new_callable=AsyncMock,
+        ) as run_check_once:
+            resp = client.post("/api/recovery/check-hardware")
 
         assert resp.status_code == 200
         assert resp.json() == {
@@ -236,6 +241,7 @@ class TestHardwareStatus:
                 "timestamp": fault.timestamp,
             }],
         }
+        run_check_once.assert_awaited_once_with()
 
     def test_recovery_restart_dashboard_schedules_process_restart(self, client, app):
         with patch.object(recovery_routes, "schedule_dashboard_restart") as restart:
