@@ -217,7 +217,6 @@ def test_start_uses_cloud_task_params_not_browser_params(client: TestClient, app
         "reset_time_s": 1,
         "dataset_name": "cloud_dataset",
         "use_cameras": False,
-        "arms": "left",
     }
 
 
