@@ -33,7 +33,10 @@ export default function AppHeader() {
     }, [fetchNetworkInfo])
 
     const pageTitle = useMemo(() => {
-        if (location.pathname.startsWith('/control')) return t('controlCenter')
+        if (location.pathname.startsWith('/collection/admin')) return '任务发布'
+        if (location.pathname.startsWith('/collection')) return '采集任务'
+        if (location.pathname.startsWith('/control')) return '控制平台'
+        if (location.pathname.startsWith('/recovery')) return '修复平台'
         if (location.pathname.startsWith('/datasets/explorer')) return t('datasetExplorer')
         if (location.pathname.startsWith('/datasets')) return t('datasetReader')
         if (location.pathname.startsWith('/curation/datasets')) return t('datasetReader')

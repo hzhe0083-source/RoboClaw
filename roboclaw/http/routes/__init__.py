@@ -14,6 +14,7 @@ def register_all_routes(
     web_channel: Any,
     service: EmbodiedService,
     get_config: Callable[[], tuple[str, int]],
+    collection_config: Any | None = None,
 ) -> None:
     """Register every dashboard API group on *app*."""
     from roboclaw.http.routes.session import register_session_routes
@@ -30,8 +31,10 @@ def register_all_routes(
     from roboclaw.http.routes.infer import register_infer_routes
     from roboclaw.http.routes.hub import register_hub_routes
     from roboclaw.http.routes.chat_uploads import register_chat_upload_routes
+    from roboclaw.http.routes.collection import register_collection_routes
 
     register_chat_upload_routes(app)
+    register_collection_routes(app, service, collection_config=collection_config)
     register_session_routes(app, service)
     register_hardware_routes(app, service)
     register_setup_routes(app, service)

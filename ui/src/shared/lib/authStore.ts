@@ -2,9 +2,9 @@
  * 认证状态管理（Zustand store）
  *
  * 设计原则：
- * - 登录状态完全基于云端 ECS 后端，必须联网才能维持
- * - isChecking 期间应用正常渲染，不阻塞本地功能
- * - 网络不可达时 cloudAvailable=false，本地功能不受影响
+ * - 登录状态完全基于云端 ECS 后端，必须联网才能进入主应用
+ * - token 只保存在浏览器 localStorage，本地后端不保存账号数据
+ * - 网络不可达时 cloudAvailable=false，应用回到登录入口
  */
 
 import { create } from 'zustand'

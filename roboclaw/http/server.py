@@ -324,6 +324,7 @@ def create_app(
             web_ch,
             runtime.embodied_service,
             get_config=lambda: (web_cfg["host"], web_cfg["port"]),
+            collection_config=config.evo_data,
         )
 
     # Serve built frontend in production (ui/dist/)

@@ -2,6 +2,7 @@
 @import '@/shared/styles/base.css';
 @import '@/app/shell/styles.css';
 @import '@/domains/control/styles.css';
+@import '@/domains/collection/styles.css';
 @import '@/domains/chat/styles.css';
 @import '@/domains/hardware/styles.css';
 @import '@/domains/datasets/styles.css';

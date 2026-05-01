@@ -101,7 +101,7 @@ class GatewayConfig(Base):
     """Gateway/server configuration."""
 
     host: str = "0.0.0.0"
-    port: int = 18790
+    port: int = 8765
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
 
@@ -177,6 +177,15 @@ class ControlCenterConfig(Base):
     record: ControlRecordConfig = Field(default_factory=ControlRecordConfig)
 
 
+class EvoDataConfig(Base):
+    """Cloud evo-data backend used by local collection-task flows."""
+
+    auth_api_url: str = "https://api.evomind-tech.com"
+    api_url: str = "http://8.136.130.234/dev-api"
+    heartbeat_interval_s: int = 30
+    finish_retry_interval_s: int = 60
+
+
 class Config(BaseSettings):
     """Root configuration for roboclaw."""
 
@@ -187,6 +196,7 @@ class Config(BaseSettings):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     huggingface: HuggingFaceConfig = Field(default_factory=HuggingFaceConfig)
     control_center: ControlCenterConfig = Field(default_factory=ControlCenterConfig)
+    evo_data: EvoDataConfig = Field(default_factory=EvoDataConfig)
 
     @property
     def workspace_path(self) -> Path:

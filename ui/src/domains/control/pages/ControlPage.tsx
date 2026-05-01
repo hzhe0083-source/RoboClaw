@@ -1,57 +1,22 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { collectionApi, type Assignment, type CollectionStatus } from '@/domains/collection/api/collectionApi'
+import { useHardwareStore, type OperationCapability } from '@/domains/hardware/store/useHardwareStore'
 import { useSessionStore, type SessionState } from '@/domains/session/store/useSessionStore'
-import { useHardwareStore, type HardwareCapabilities, type OperationCapability } from '@/domains/hardware/store/useHardwareStore'
-import { useDatasetsStore } from '@/domains/datasets/store/useDatasetsStore'
-import { useTrainingStore } from '@/domains/training/store/useTrainingStore'
 import { useI18n } from '@/i18n'
-import { CameraPreviewPanel } from '@/domains/control/components/CameraPreviewPanel'
-import { fetchControlRecordConfig, saveControlRecordConfig } from '@/domains/control/api/controlConfigApi'
-import { ServoPanel } from '@/domains/hardware/components/ServoPanel'
+import { useAuthStore } from '@/shared/lib/authStore'
+import { ActionButton } from '@/shared/ui'
 
 const blockedCapability: OperationCapability = { ready: false, missing: [] }
-
-function capabilityOf(
-  capabilities: HardwareCapabilities | undefined,
-  name: keyof HardwareCapabilities,
-): OperationCapability {
-  return capabilities?.[name] ?? blockedCapability
-}
-
-function canDo(
-  state: SessionState,
-  capabilities: HardwareCapabilities | undefined,
-  useRecordCameras: boolean,
-) {
-  const canStart = state === 'idle' || state === 'error'
-  const tele = state === 'teleoperating'
-  const rec = state === 'recording'
-  const rep = state === 'replaying'
-  const inf = state === 'inferring'
-  const recordCapability = capabilityOf(
-    capabilities,
-    useRecordCameras ? 'record' : 'record_without_cameras',
-  )
-  const inferCapability = capabilityOf(capabilities, 'infer')
-  return {
-    teleopStart: canStart && capabilityOf(capabilities, 'teleop').ready,
-    teleopStop: tele,
-    recStart: canStart && recordCapability.ready,
-    recStop: rec,
-    saveEp: rec,
-    discardEp: rec,
-    replayStart: canStart && capabilityOf(capabilities, 'replay').ready,
-    replayStop: rep,
-    inferStart: canStart && inferCapability.ready,
-    inferStop: inf,
-  }
-}
 
 function ActionBtn({
   children, disabled, onClick, color, title,
 }: {
-  children: React.ReactNode; disabled?: boolean; onClick?: () => void
-  color: 'ac' | 'gn' | 'rd' | 'yl'; title?: string
+  children: React.ReactNode
+  disabled?: boolean
+  onClick?: () => void
+  color: 'ac' | 'gn' | 'rd' | 'yl'
+  title?: string
 }) {
   const cls: Record<string, string> = {
     ac: 'bg-ac hover:bg-ac2 shadow-glow-ac',
@@ -64,620 +29,546 @@ function ActionBtn({
       disabled={disabled}
       onClick={onClick}
       title={title}
-      className={`w-full px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-all
-        active:scale-[0.97] disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none ${cls[color]}`}
+      className={`w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-all
+        active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-25 disabled:shadow-none ${cls[color]}`}
     >
       {children}
     </button>
   )
 }
 
-function StatusDot({ color, label }: { color: 'ac' | 'gn' | 'yl'; label: string }) {
-  const dotCls: Record<string, string> = { ac: 'bg-ac', gn: 'bg-gn', yl: 'bg-yl' }
-  const textCls: Record<string, string> = { ac: 'text-ac', gn: 'text-gn', yl: 'text-yl' }
+function capabilityReason(capability: OperationCapability) {
+  return capability.missing.join(' · ')
+}
+
+function capabilityOf(hwStatus: any, name: string): OperationCapability {
+  return hwStatus?.capabilities?.[name] ?? blockedCapability
+}
+
+function canStart(state: SessionState) {
+  return state === 'idle' || state === 'error'
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function formatHours(seconds: number) {
+  const hours = seconds / 3600
+  return `${hours.toFixed(hours >= 10 ? 0 : 1)} h`
+}
+
+function formatSeconds(seconds: number) {
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds % 60
+  return rest ? `${minutes}m ${rest}s` : `${minutes}m`
+}
+
+function assignmentProgressPct(item: Assignment) {
+  if (item.target_seconds <= 0) return 0
+  return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
+}
+
+function HardwareSummary({ hwStatus, busy, state, owner }: {
+  hwStatus: any
+  busy: boolean
+  state: string
+  owner: string
+}) {
+  const { t } = useI18n()
+  const hwReady = hwStatus?.ready ?? false
+  const accent = !hwStatus ? 'shadow-inset-ac' : hwReady ? 'shadow-inset-gn' : 'shadow-inset-yl'
+
   return (
-    <div className={`mt-2 flex items-center gap-2 text-xs font-medium ${textCls[color]}`}>
-      <span className={`w-2 h-2 rounded-full animate-pulse ${dotCls[color]}`} />
-      {label}
+    <div className={`bg-sf rounded-lg p-3.5 ${accent}`}>
+      <div className="flex flex-wrap items-center gap-5">
+        <div>
+          <div className="text-2xs font-mono uppercase tracking-widest text-tx3">{t('arms')}</div>
+          <div className="mt-2 flex items-center gap-1.5">
+            {hwStatus?.arms.map((arm: any) => (
+              <span
+                key={arm.alias}
+                className={`h-2.5 w-2.5 rounded-full ring-2 ring-white ${!arm.connected ? 'bg-rd' : !arm.calibrated ? 'bg-yl' : 'bg-gn'}`}
+                title={arm.alias}
+              />
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="text-2xs font-mono uppercase tracking-widest text-tx3">{t('cameras')}</div>
+          <div className="mt-2 flex items-center gap-1.5">
+            {hwStatus?.cameras.map((camera: any) => (
+              <span
+                key={camera.alias}
+                className={`h-2.5 w-2.5 rounded-full ring-2 ring-white ${camera.connected ? 'bg-gn' : 'bg-rd'}`}
+                title={camera.alias}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="ml-auto text-right">
+          <div className="text-xs font-semibold text-tx">
+            {hwReady ? t('hwReady') : `${hwStatus?.missing?.length ?? 0} ${t('warnings')}`}
+          </div>
+          {busy && <div className="mt-1 text-2xs font-mono text-tx3">{state}{owner ? ` · ${owner}` : ''}</div>}
+        </div>
+      </div>
     </div>
   )
 }
 
-export default function ControlPage() {
-  const session = useSessionStore((state) => state.session)
-  const loading = useSessionStore((state) => state.loading)
-  const fetchSessionStatus = useSessionStore((state) => state.fetchSessionStatus)
-  const doDismissError = useSessionStore((state) => state.doDismissError)
-  const doTeleopStart = useSessionStore((state) => state.doTeleopStart)
-  const doTeleopStop = useSessionStore((state) => state.doTeleopStop)
-  const doRecordStart = useSessionStore((state) => state.doRecordStart)
-  const doRecordStop = useSessionStore((state) => state.doRecordStop)
-  const doSaveEpisode = useSessionStore((state) => state.doSaveEpisode)
-  const doDiscardEpisode = useSessionStore((state) => state.doDiscardEpisode)
-  const doSkipReset = useSessionStore((state) => state.doSkipReset)
-  const doReplayStart = useSessionStore((state) => state.doReplayStart)
-  const doReplayStop = useSessionStore((state) => state.doReplayStop)
-  const doInferStart = useSessionStore((state) => state.doInferStart)
-  const doInferStop = useSessionStore((state) => state.doInferStop)
-  const hwStatus = useHardwareStore((state) => state.hardwareStatus)
-  const fetchHardwareStatus = useHardwareStore((state) => state.fetchHardwareStatus)
-  const datasets = useDatasetsStore((state) => state.datasets)
-  const loadDatasets = useDatasetsStore((state) => state.loadDatasets)
-  const policies = useTrainingStore((state) => state.policies)
-  const loadPolicies = useTrainingStore((state) => state.loadPolicies)
-  const { t } = useI18n()
-  const navigate = useNavigate()
-  const { state, record_phase: recordPhase, record_pending_command: recordPendingCommand, saved_episodes: savedEpisodes, target_episodes: targetEpisodes, embodiment_owner: owner, prepare_stage: prepareStage } = session
-  const teleopStopping = loading === 'teleop-stop' || (state === 'stopping' && owner === 'teleop')
-  const recordStopping = loading === 'record-stop' || (state === 'stopping' && owner === 'recording')
-  const replayStopping = loading === 'replay-stop' || (state === 'stopping' && owner === 'replaying')
-  const inferStopping = loading === 'infer-stop' || (state === 'stopping' && owner === 'inferring')
+function CollectionRunPanel({
+  collectionStatus,
+  assignments,
+  targetDate,
+  session,
+  loading,
+  onDateChange,
+  onStart,
+  onStop,
+  onSave,
+  onDiscard,
+  onSkipReset,
+  onRetryPending,
+}: {
+  collectionStatus: CollectionStatus | null
+  assignments: Assignment[]
+  targetDate: string
+  session: any
+  loading: boolean
+  onDateChange: (value: string) => void
+  onStart: (assignment: Assignment) => void
+  onStop: () => void
+  onSave: () => void
+  onDiscard: () => void
+  onSkipReset: () => void
+  onRetryPending: () => void
+}) {
+  const active = collectionStatus?.active_run
+  const totalTargetSeconds = assignments.reduce((sum, item) => sum + item.target_seconds, 0)
+  const totalCompletedSeconds = assignments.reduce((sum, item) => sum + item.completed_seconds, 0)
+  const totalProgress = totalTargetSeconds > 0 ? Math.min(100, Math.round((totalCompletedSeconds / totalTargetSeconds) * 100)) : 0
+  const targetEpisodes = session.target_episodes || active?.task_params.num_episodes || 0
+  const pct = targetEpisodes > 0 ? Math.min(100, Math.round((session.saved_episodes / targetEpisodes) * 100)) : 0
 
-  function translateMissing(msg: string): string {
-    if (msg === 'No follower arm configured') return t('hwMissingNoFollower')
-    if (msg === 'No leader arm configured') return t('hwMissingNoLeader')
-    if (msg.includes('is disconnected') && msg.startsWith('Arm'))
-      return `${msg.match(/Arm '(.+?)'/)?.[1] ?? ''} ${t('hwMissingDisconnected')}`
-    if (msg.includes('is not calibrated'))
-      return `${msg.match(/Arm '(.+?)'/)?.[1] ?? ''} ${t('hwMissingNotCalibrated')}`
-    if (msg.includes('is disconnected') && msg.startsWith('Camera'))
-      return `${msg.match(/Camera '(.+?)'/)?.[1] ?? ''} ${t('hwMissingCameraDisconnected')}`
-    if (msg === 'No cameras configured') return t('hwMissingNoCamera')
-    if (msg.includes('mismatch')) return t('hwMissingCountMismatch')
-    return msg
+  if (!active) {
+    return (
+      <>
+        <section className="bg-sf rounded-lg p-5 shadow-card">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Collection</div>
+              <h2 className="mt-2 text-xl font-bold text-tx">数采</h2>
+            </div>
+            <input
+              className="collection-input collection-input--date"
+              type="date"
+              value={targetDate}
+              onChange={(event) => onDateChange(event.target.value)}
+            />
+          </div>
+
+          <div className="mt-4 grid items-center gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(180px,320px)_auto]">
+            <div>
+              <div className="text-xs font-bold text-tx2">总进度</div>
+              <div className="mt-1 text-2xl font-black text-tx">
+                {formatHours(totalCompletedSeconds)} / {formatHours(totalTargetSeconds)}
+              </div>
+            </div>
+            <div className="collection-progress">
+              <span style={{ width: `${totalProgress}%` }} />
+            </div>
+            <div className="rounded-full border border-bd/50 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-tx2">
+              Idle
+            </div>
+          </div>
+        </section>
+
+        {collectionStatus && collectionStatus.pending_finish_count > 0 && (
+          <div className="collection-warning">
+            <span>{collectionStatus.pending_finish_count} 个 finish 等待同步</span>
+            <ActionButton variant="warning" onClick={onRetryPending} disabled={loading}>重试同步</ActionButton>
+          </div>
+        )}
+
+        <div className="collection-grid">
+          {assignments.map((assignment) => {
+            const assignmentPct = assignmentProgressPct(assignment)
+            const disabled = loading || !assignment.is_active
+            return (
+              <article className="collection-task-card" key={assignment.id}>
+                <div className="collection-task-card__head">
+                  <div>
+                    <h3>{assignment.task_name}</h3>
+                    <p>{assignment.task_params.task}</p>
+                  </div>
+                  <span>{assignmentPct}%</span>
+                </div>
+                <div className="collection-progress">
+                  <span style={{ width: `${assignmentPct}%` }} />
+                </div>
+                <div className="collection-task-card__meta">
+                  <span>{formatHours(assignment.completed_seconds)} / {formatHours(assignment.target_seconds)}</span>
+                  <span>{assignment.task_params.fps} fps</span>
+                  <span>{assignment.task_params.num_episodes} eps</span>
+                </div>
+                <ActionButton disabled={disabled} onClick={() => onStart(assignment)}>
+                  开始采集
+                </ActionButton>
+              </article>
+            )
+          })}
+        </div>
+
+        {assignments.length === 0 && (
+          <div className="collection-empty">
+            <div className="collection-empty__title">没有任务</div>
+            <div className="collection-empty__caption">{targetDate}</div>
+          </div>
+        )}
+      </>
+    )
   }
-
-  // Merged record/infer card
-  type OpMode = 'record' | 'infer'
-  const [mode, setMode] = useState<OpMode>('record')
-  const [task, setTask] = useState('')
-  const [numEp, setNumEp] = useState(10)
-  const [episodeTime, setEpisodeTime] = useState(300)
-  const [resetTime, setResetTime] = useState(10)
-  const [datasetName, setDatasetName] = useState('')
-  const [fps, setFps] = useState(30)
-  const [useCameras, setUseCameras] = useState(true)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [inferCheckpoint, setInferCheckpoint] = useState('')
-  const [manageMode, setManageMode] = useState(false)
-  const [recordConfigReady, setRecordConfigReady] = useState(false)
-  // Replay
-  const [replayDataset, setReplayDataset] = useState('')
-  const [replayEpisode, setReplayEpisode] = useState(0)
-  const hwReady = hwStatus?.ready ?? false
-  const capabilities = hwStatus?.capabilities
-  const ok = canDo(state, capabilities, useCameras)
-  const teleopCapability = capabilityOf(capabilities, 'teleop')
-  const recordCapability = capabilityOf(capabilities, useCameras ? 'record' : 'record_without_cameras')
-  const replayCapability = capabilityOf(capabilities, 'replay')
-  const inferCapability = capabilityOf(capabilities, 'infer')
-
-  useEffect(() => {
-    void loadDatasets()
-    void loadPolicies()
-    void fetchHardwareStatus()
-    void fetchSessionStatus()
-    const pollInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void fetchHardwareStatus()
-      }
-    }, 5000)
-    return () => clearInterval(pollInterval)
-  }, [fetchHardwareStatus, fetchSessionStatus, loadDatasets, loadPolicies])
-
-  useEffect(() => {
-    let cancelled = false
-    async function loadRecordConfig() {
-      try {
-        const config = await fetchControlRecordConfig()
-        if (cancelled) return
-        setTask(config.task)
-        setNumEp(config.num_episodes)
-        setEpisodeTime(config.episode_time_s)
-        setResetTime(config.reset_time_s)
-        setDatasetName(config.dataset_name)
-        setFps(config.fps)
-        setUseCameras(config.use_cameras)
-      } catch (error) {
-        console.error('Failed to load control record config', error)
-      } finally {
-        if (!cancelled) {
-          setRecordConfigReady(true)
-        }
-      }
-    }
-    void loadRecordConfig()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!recordConfigReady) return
-    void saveControlRecordConfig({
-      task,
-      num_episodes: numEp,
-      episode_time_s: episodeTime,
-      reset_time_s: resetTime,
-      dataset_name: datasetName,
-      fps,
-      use_cameras: useCameras,
-    })
-  }, [datasetName, episodeTime, fps, numEp, recordConfigReady, resetTime, task, useCameras])
-
-  useEffect(() => {
-    if (!manageMode) {
-      if (mode !== 'record') {
-        setMode('record')
-      }
-      if (showAdvanced) {
-        setShowAdvanced(false)
-      }
-    }
-  }, [manageMode, mode, showAdvanced])
-
-  const stateLabel: Record<string, string> = {
-    preparing: t('hwInitializing'),
-    teleoperating: t('stateTeleoperating'),
-    recording: t('stateRecording'),
-    replaying: t('stateReplaying'),
-    inferring: t('stateInferring'),
-    stopping: t('stateStopping'),
-    calibrating: t('calibrating'),
-  }
-  const stateBadgeCls: Record<string, string> = {
-    preparing: 'bg-yl/15 text-yl border-yl/30',
-    teleoperating: 'bg-ac/15 text-ac border-ac/30',
-    recording: 'bg-rd/15 text-rd border-rd/30',
-    replaying: 'bg-gn/15 text-gn border-gn/30',
-    inferring: 'bg-ac/15 text-ac border-ac/30',
-    stopping: 'bg-yl/15 text-yl border-yl/30',
-    calibrating: 'bg-yl/15 text-yl border-yl/30',
-  }
-
-  const busy = state !== 'idle' && state !== 'error'
-
-  // Local elapsed timer — WS events stop after state transitions, so we tick locally
-  const [elapsedTick, setElapsedTick] = useState(0)
-  useEffect(() => {
-    setElapsedTick(Math.round(session.elapsed_seconds) || 0)
-  }, [session.elapsed_seconds])
-  useEffect(() => {
-    if (!busy) return
-    const interval = setInterval(() => setElapsedTick(t => t + 1), 1000)
-    return () => clearInterval(interval)
-  }, [busy])
-
-  const [taskError, setTaskError] = useState(false)
-
-  function handleRecordStart() {
-    if (!task.trim()) {
-      setTaskError(true)
-      setTimeout(() => setTaskError(false), 1500)
-      return
-    }
-    void doRecordStart({
-      task: task.trim(),
-      num_episodes: numEp,
-      episode_time_s: episodeTime,
-      reset_time_s: resetTime,
-      dataset_name: datasetName.trim() || undefined,
-      fps,
-      use_cameras: useCameras,
-    })
-  }
-
-  function handleManageModeToggle() {
-    if (manageMode) {
-      setManageMode(false)
-      return
-    }
-    const password = window.prompt(t('enterManagePassword'))
-    if (password === 'zhaobo666') {
-      setManageMode(true)
-      return
-    }
-    if (password !== null) {
-      window.alert(t('managePasswordError'))
-    }
-  }
-  const busyReason = busy ? `${stateLabel[state] || state}${owner ? ` (${owner})` : ''}` : ''
-  const capabilityReason = (capability: OperationCapability) =>
-    capability.missing.map(translateMissing).join(' · ')
-  const hwAccent = !hwStatus ? 'shadow-inset-ac' : hwStatus.ready ? 'shadow-inset-gn' : 'shadow-inset-yl'
-  const camerasExist = hwStatus && hwStatus.cameras.length > 0 && hwStatus.cameras.some((c: any) => c.connected)
-  const pct = targetEpisodes > 0 ? Math.round((savedEpisodes / targetEpisodes) * 100) : 0
-  const replayDatasets = datasets.filter(
-    (dataset) => dataset.capabilities.can_replay && !!dataset.runtime && dataset.stats.total_episodes > 0,
-  )
 
   return (
-    <div className="page-enter flex flex-col h-full overflow-y-auto">
-      {/* Error & hardware warning bars */}
-      {session.error && (
-        <div className="px-4 py-2 bg-rd/10 border-b border-rd/30 border-l-4 border-l-rd text-rd text-sm font-mono whitespace-pre-wrap flex items-start gap-2">
-          <span className="flex-1">{session.error}</span>
-          <button
-            onClick={() => { void doDismissError() }}
-            className="shrink-0 px-2 py-0.5 rounded text-xs font-semibold bg-rd/20 hover:bg-rd/30 transition-colors"
-          >
-            {t('dismissError')}
-          </button>
+    <section className="bg-sf rounded-lg p-5 shadow-card">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Collection</div>
+          <h2 className="mt-2 text-xl font-bold text-tx">正在采集</h2>
+          <p className="mt-1 text-sm text-tx2">{active.dataset_name}</p>
+          <p className="mt-2 max-w-3xl text-sm text-tx">{active.task_params.task}</p>
         </div>
-      )}
-      {!hwReady && hwStatus && (
-        <div className="px-4 py-2.5 bg-yl/8 border-b border-yl/20 text-yl text-sm font-medium">
-          {hwStatus.missing.map(translateMissing).join(' · ')}
+        <div className="grid min-w-[220px] grid-cols-2 gap-2 text-sm">
+          <div className="rounded-lg bg-sf2 p-3">
+            <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Episodes</div>
+            <div className="mt-1 text-lg font-bold text-tx">{session.saved_episodes}/{targetEpisodes}</div>
+          </div>
+          <div className="rounded-lg bg-sf2 p-3">
+            <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Elapsed</div>
+            <div className="mt-1 text-lg font-bold text-tx">{formatSeconds(Math.round(session.elapsed_seconds || 0))}</div>
+          </div>
         </div>
-      )}
+      </div>
 
-      <div className="p-4 space-y-3">
-        {/* Top row: Hardware status + Teleop + Recording */}
-        <div className="flex gap-3 max-[900px]:flex-col">
-          {/* Hardware status card — enhanced with embodiment state */}
-          <div
-            onClick={() => navigate('/settings')}
-            className={`w-[200px] max-[900px]:w-full shrink-0 bg-sf rounded-lg p-3.5 cursor-pointer
-              ${hwAccent} transition-all hover:shadow-card-hover animate-slide-up stagger-1`}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-2xs text-tx3 font-mono uppercase tracking-widest">{t('arms')}</span>
-                <div className="flex items-center gap-1">
-                  {hwStatus?.arms.map(arm => (
-                    <span key={arm.alias}
-                      className={`w-2.5 h-2.5 rounded-full ring-2 ring-white ${!arm.connected ? 'bg-rd' : !arm.calibrated ? 'bg-yl' : 'bg-gn'}`}
-                      title={arm.alias}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-2xs text-tx3 font-mono uppercase tracking-widest">{t('cameras')}</span>
-                <div className="flex items-center gap-1">
-                  {hwStatus?.cameras.map(cam => (
-                    <span key={cam.alias}
-                      className={`w-2.5 h-2.5 rounded-full ring-2 ring-white ${cam.connected ? 'bg-gn' : 'bg-rd'}`}
-                      title={cam.alias}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="mt-2 text-2xs text-tx3 font-medium">
-              {hwStatus?.ready ? t('hwReady') : `${hwStatus?.missing?.length ?? 0} ${t('warnings')}`}
-            </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-sf2">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-ac2 to-ac transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
 
-            {/* Embodiment status — local process or cross-process (agent) */}
-            {busy && (
-              <div className="mt-2 pt-2 border-t border-bd/40">
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full animate-pulse ${stateBadgeCls[state]?.includes('text-rd') ? 'bg-rd' : stateBadgeCls[state]?.includes('text-yl') ? 'bg-yl' : 'bg-ac'}`} />
-                  <span className="text-xs font-semibold text-tx">{stateLabel[state] || state}</span>
-                </div>
-                <div className="text-2xs text-tx3 mt-0.5 font-mono">
-                  {elapsedTick > 0 && `${elapsedTick}s`}
-                  {owner && ` · ${t('embodimentSource')}: ${owner}`}
-                </div>
-              </div>
-            )}
-            {!busy && owner && owner !== 'unknown' && (
-              <div className="mt-2 pt-2 border-t border-bd/40">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full animate-pulse bg-yl" />
-                  <span className="text-xs font-semibold text-tx">{owner}</span>
-                </div>
-                <div className="text-2xs text-tx3 mt-0.5 font-mono">{t('embodimentSource')}</div>
-              </div>
-            )}
+      <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <ActionBtn color="gn" disabled={loading || session.record_phase !== 'recording' || !!session.record_pending_command} onClick={onSave}>
+          保存 episode
+        </ActionBtn>
+        <ActionBtn color="yl" disabled={loading || session.record_phase !== 'recording' || !!session.record_pending_command} onClick={onSkipReset}>
+          跳过 reset
+        </ActionBtn>
+        <ActionBtn color="yl" disabled={loading || session.record_phase !== 'recording' || !!session.record_pending_command} onClick={onDiscard}>
+          丢弃 episode
+        </ActionBtn>
+        <ActionBtn color="rd" disabled={loading} onClick={onStop}>
+          结束采集
+        </ActionBtn>
+      </div>
+      <div className="mt-3 text-xs font-medium text-tx2">
+        状态：{session.record_phase || session.state}
+      </div>
+    </section>
+  )
+}
 
+function AdminDebugPanel({
+  state,
+  loading,
+  hwStatus,
+  onTeleopStart,
+  onTeleopStop,
+  onRecordStart,
+  onRecordStop,
+  onInferStart,
+  onInferStop,
+}: {
+  state: SessionState
+  loading: string | null
+  hwStatus: any
+  onTeleopStart: () => void
+  onTeleopStop: () => void
+  onRecordStart: (params: {
+    task: string
+    numEpisodes: number
+    fps: number
+    episodeTime: number
+    resetTime: number
+  }) => void
+  onRecordStop: () => void
+  onInferStart: (params: {
+    checkpointPath: string
+    numEpisodes: number
+    episodeTime: number
+  }) => void
+  onInferStop: () => void
+}) {
+  const [task, setTask] = useState('')
+  const [fps, setFps] = useState(30)
+  const [numEpisodes, setNumEpisodes] = useState(1)
+  const [episodeTime, setEpisodeTime] = useState(300)
+  const [resetTime, setResetTime] = useState(10)
+  const [checkpointPath, setCheckpointPath] = useState('')
+  const [inferEpisodes, setInferEpisodes] = useState(1)
+  const [inferEpisodeTime, setInferEpisodeTime] = useState(300)
+  const teleopCapability = capabilityOf(hwStatus, 'teleop')
+  const recordCapability = capabilityOf(hwStatus, 'record')
+  const inferCapability = capabilityOf(hwStatus, 'infer')
+  const busy = state !== 'idle' && state !== 'error'
+
+  return (
+    <section className="bg-sf rounded-lg p-5 shadow-card">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Control</div>
+          <h2 className="mt-2 text-xl font-bold text-tx">控制平台</h2>
+        </div>
+        <Link className="collection-link-button" to="/collection/admin">任务发布</Link>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-2 content-start">
+          <h3 className="text-sm font-bold text-tx">摇操</h3>
+          <ActionBtn color="ac" disabled={!canStart(state) || !teleopCapability.ready || !!loading} onClick={onTeleopStart} title={capabilityReason(teleopCapability)}>
+            开始遥操作
+          </ActionBtn>
+          <ActionBtn color="yl" disabled={state !== 'teleoperating' || !!loading} onClick={onTeleopStop}>
+            停止遥操作
+          </ActionBtn>
+        </div>
+
+        <div className="grid gap-3">
+          <h3 className="text-sm font-bold text-tx">数采</h3>
+          <input
+            className="collection-input"
+            value={task}
+            onChange={(event) => setTask(event.target.value)}
+            placeholder="调试采集任务描述"
+          />
+          <div className="collection-form-grid">
+            <input className="collection-input" type="number" min={1} value={numEpisodes} onChange={(event) => setNumEpisodes(Number(event.target.value) || 1)} />
+            <input className="collection-input" type="number" min={1} value={fps} onChange={(event) => setFps(Number(event.target.value) || 30)} />
+            <input className="collection-input" type="number" min={1} value={episodeTime} onChange={(event) => setEpisodeTime(Number(event.target.value) || 300)} />
+            <input className="collection-input" type="number" min={0} value={resetTime} onChange={(event) => setResetTime(Number(event.target.value) || 0)} />
           </div>
-
-          {/* Teleop */}
-          <div className="w-[190px] max-[900px]:w-full shrink-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-2">
-            <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('teleoperation')}</h3>
-            <div className="space-y-2">
-              <ActionBtn color="ac" disabled={!ok.teleopStart || !!loading}
-                onClick={() => { void doTeleopStart() }}
-                title={busy ? busyReason : capabilityReason(teleopCapability) || undefined}>
-                {loading === 'teleop' ? t('startingTeleop') : t('startTeleop')}
-              </ActionBtn>
-              <ActionBtn color="yl" disabled={!ok.teleopStop || !!loading} onClick={() => { void doTeleopStop() }}>
-                {teleopStopping ? t('stoppingTeleop') : t('stopTeleop')}
-              </ActionBtn>
-            </div>
-            {(loading === 'teleop' || state === 'teleoperating' || teleopStopping) && (
-              <div className={`mt-3 flex items-center gap-2 text-xs font-medium ${teleopStopping ? 'text-yl' : 'text-ac'}`}>
-                <span className={`w-2 h-2 rounded-full animate-pulse ${teleopStopping ? 'bg-yl' : 'bg-ac'}`} />
-                {loading === 'teleop'
-                  ? t('hwInitializing')
-                  : teleopStopping
-                    ? t('stoppingTeleop')
-                    : t('stateTeleoperating')}
-              </div>
-            )}
-          </div>
-
-          {/* Record / Infer — merged card with tab switch */}
-          <div className="flex-1 min-w-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-3">
-            {/* Tab bar */}
-            <div className="flex gap-1.5 mb-3">
-              {(['record', 'infer'] as const).map((m) => {
-                const label = m === 'record' ? t('recording') : t('inference')
-                const active = mode === m
-                const locked = !manageMode
-                  ? m === 'infer'
-                  : (m === 'record' && state === 'inferring') || (m === 'infer' && state === 'recording')
-                return (
-                  <button key={m} disabled={locked}
-                    onClick={() => setMode(m)}
-                    className={`px-3 py-1.5 text-xs rounded-md border transition-colors font-medium
-                      ${active ? 'border-ac bg-ac/5 text-ac ring-1 ring-ac/20' : 'border-bd/50 text-tx2 hover:border-ac/50'}
-                      ${locked ? 'opacity-30 cursor-not-allowed' : ''}`}>
-                    {label}
-                  </button>
-                )
-              })}
-              <button
-                type="button"
-                onClick={handleManageModeToggle}
-                className={`ml-auto px-3 py-1.5 text-xs rounded-md border transition-colors font-medium
-                  ${manageMode ? 'border-yl bg-yl/10 text-yl' : 'border-bd/50 text-tx2 hover:border-yl/50'}`}
-                title={t('manageMode')}
-              >
-                {t('manageModel')}
-              </button>
-            </div>
-
-            {/* Mode-specific input */}
-            {mode === 'record' ? (
-              <input
-                value={task}
-                onChange={(e) => { setTask(e.target.value); setTaskError(false) }}
-                readOnly={!manageMode}
-                placeholder="Pick up the red block"
-                className={`w-full bg-sf2 border text-tx px-3 py-2 rounded-lg text-sm
-                  focus:outline-none focus:border-ac focus:shadow-glow-ac placeholder:text-tx3 mb-3
-                  ${!manageMode ? 'opacity-70 cursor-not-allowed' : ''}
-                  ${taskError ? 'border-rd animate-shake' : 'border-bd'}`}
-              />
-            ) : (
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono mb-3">
-                {t('selectCheckpoint')}
-                <select value={inferCheckpoint} onChange={(e) => setInferCheckpoint(e.target.value)}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac">
-                  <option value="">--</option>
-                  {policies.map(p => (
-                    <option key={p.name} value={p.checkpoint}>
-                      {p.name}{p.steps ? ` (${p.steps} steps)` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {/* Shared + mode-specific params */}
-            <div className="flex gap-2 items-end flex-wrap">
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
-                {t('numEpisodes')}
-                <input type="number" value={numEp} onChange={(e) => setNumEp(Number(e.target.value) || 10)} min={1}
-                  readOnly={!manageMode}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-              </label>
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
-                {t('epTime')}
-                <input type="number" value={episodeTime} onChange={(e) => setEpisodeTime(Number(e.target.value) || 300)} min={1}
-                  readOnly={!manageMode}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-              </label>
-              {mode === 'record' && (
-                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
-                  {t('resetTime')}
-                  <input type="number" value={resetTime} onChange={(e) => setResetTime(Number(e.target.value) || 10)} min={0}
-                    readOnly={!manageMode}
-                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-                </label>
-              )}
-            </div>
-
-            {/* Collapsible advanced options */}
-            <button
-              type="button"
-              onClick={() => {
-                if (manageMode) {
-                  setShowAdvanced(!showAdvanced)
-                }
-              }}
-              disabled={!manageMode}
-              className="flex items-center gap-1.5 text-2xs text-tx3 font-mono uppercase tracking-widest
-                hover:text-tx2 transition-colors my-2 disabled:opacity-40 disabled:cursor-not-allowed"
+          <div className="grid grid-cols-2 gap-2">
+            <ActionBtn
+              color="gn"
+              disabled={busy || !recordCapability.ready || !!loading || !task.trim()}
+              onClick={() => onRecordStart({ task, numEpisodes, fps, episodeTime, resetTime })}
+              title={capabilityReason(recordCapability)}
             >
-              <svg
-                className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-90' : ''}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              {t('advancedOptions')}
-            </button>
-
-            {showAdvanced && (
-              <div className="flex gap-2 items-end flex-wrap mb-3 pl-4 border-l-2 border-bd/40">
-                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1 min-w-[120px]">
-                  {t('datasetName')}
-                  <input
-                    value={datasetName}
-                    onChange={(e) => setDatasetName(e.target.value)}
-                    placeholder="rec_20260410_..."
-                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono
-                      focus:outline-none focus:border-ac placeholder:text-tx3"
-                  />
-                </label>
-                {mode === 'record' && (
-                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
-                    {t('fps')}
-                    <input
-                      type="number" value={fps}
-                      onChange={(e) => setFps(Number(e.target.value) || 30)} min={1} max={120}
-                      className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono
-                        focus:outline-none focus:border-ac"
-                    />
-                  </label>
-                )}
-                <label className="flex items-center gap-2 text-2xs text-tx3 font-mono cursor-pointer self-center pb-1.5">
-                  <input
-                    type="checkbox" checked={useCameras}
-                    onChange={(e) => setUseCameras(e.target.checked)}
-                    className="w-4 h-4 rounded border-bd accent-ac"
-                  />
-                  {t('useCameras')}
-                </label>
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <div className="flex gap-2 justify-end">
-              {mode === 'record' ? (
-                <>
-                  <ActionBtn color="gn" disabled={!ok.recStart || !!loading} onClick={handleRecordStart}
-                    title={busy ? busyReason : capabilityReason(recordCapability) || undefined}>
-                    {loading === 'record' ? t('startingRecord') : t('startRecording')}
-                  </ActionBtn>
-                  <ActionBtn color="rd" disabled={!ok.recStop || !!loading} onClick={() => { void doRecordStop() }}>
-                    {recordStopping ? t('stoppingRecord') : t('stopRecording')}
-                  </ActionBtn>
-                </>
-              ) : (
-                <>
-                  <ActionBtn color="ac" disabled={!ok.inferStart || !!loading || !inferCheckpoint}
-                    onClick={() => {
-                      void doInferStart({
-                        checkpoint_path: inferCheckpoint,
-                        num_episodes: numEp,
-                        episode_time_s: episodeTime,
-                      })
-                    }}
-                    title={busy ? busyReason : capabilityReason(inferCapability) || undefined}>
-                    {loading === 'infer' ? t('startingInference') : t('startInference')}
-                  </ActionBtn>
-                  <ActionBtn color="yl" disabled={!ok.inferStop || !!loading} onClick={() => { void doInferStop() }}>
-                    {inferStopping ? t('stoppingInference') : t('stopInference')}
-                  </ActionBtn>
-                </>
-              )}
-            </div>
-
-            {/* Recording progress */}
-            {state === 'recording' && (
-              <div className="mt-3 pt-3 border-t border-bd/40">
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-mono text-tx2">{savedEpisodes} / {targetEpisodes}</span>
-                  <span className="font-mono font-bold text-ac">{pct}%</span>
-                </div>
-                <div className="w-full h-2 bg-sf2 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-ac2 to-ac rounded-full transition-all duration-500"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <ActionBtn color="gn" disabled={recordPhase !== 'recording' || !!recordPendingCommand} onClick={() => { void doSaveEpisode() }}>
-                    {recordPhase === 'save_requested' ? t('episodeSaving') : t('saveEpisode')}
-                  </ActionBtn>
-                  <ActionBtn color="yl" disabled={recordPhase !== 'recording' || !!recordPendingCommand} onClick={() => { void doDiscardEpisode() }}>
-                    {t('discardEpisode')}
-                  </ActionBtn>
-                  {recordPhase === 'resetting' && (
-                    <ActionBtn color="ac" disabled={!!recordPendingCommand} onClick={() => { void doSkipReset() }}>
-                      {t('skipReset')}
-                    </ActionBtn>
-                  )}
-                </div>
-                <div className="mt-2 flex items-center gap-2 text-xs font-medium">
-                  {(recordPhase === 'recording' || recordPhase === 'preparing' || recordPhase === 'idle') && (
-                    <><span className="w-2 h-2 rounded-full bg-ac animate-pulse" /><span className="text-ac">{t('stateRecording')}</span></>
-                  )}
-                  {recordPhase === 'save_requested' && (
-                    <><span className="w-2 h-2 rounded-full bg-yl animate-pulse" /><span className="text-yl">{t('episodeSaving')}</span></>
-                  )}
-                  {(recordPhase === 'resetting' || recordPhase === 'skip_reset_requested') && (
-                    <><span className="w-2 h-2 rounded-full bg-yl animate-pulse" /><span className="text-yl">{t('episodeResetting')}</span></>
-                  )}
-                </div>
-              </div>
-            )}
-            {recordStopping && <StatusDot color="yl" label={t('stoppingRecord')} />}
-
-            {state === 'preparing' && mode === 'infer' && (
-              <StatusDot color="yl" label={prepareStage || t('statePreparing')} />
-            )}
-            {state === 'inferring' && <StatusDot color="ac" label={t('stateInferring')} />}
-            {inferStopping && <StatusDot color="yl" label={t('stoppingInference')} />}
+              开始调试采集
+            </ActionBtn>
+            <ActionBtn color="rd" disabled={state !== 'recording' || !!loading} onClick={onRecordStop}>
+              停止调试采集
+            </ActionBtn>
           </div>
         </div>
 
-        <div className="flex gap-3 max-[900px]:flex-col">
-          <div className="flex-1 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-4">
-            <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('replay')}</h3>
-            <div className="flex gap-2 items-end flex-wrap">
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1 min-w-[160px]">
-                {t('selectDataset')}
-                <select
-                  value={replayDataset}
-                  onChange={(e) => { setReplayDataset(e.target.value); setReplayEpisode(0) }}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac"
-                >
-                  <option value="">--</option>
-                  {replayDatasets.map(d => (
-                    <option key={d.id} value={d.runtime!.name}>
-                      {d.label} ({d.stats.total_episodes} ep)
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {(() => {
-                const sel = replayDatasets.find(d => d.runtime?.name === replayDataset)
-                const maxEp = (sel?.stats.total_episodes ?? 1) - 1
-                return (
-                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[90px]">
-                    {t('episode')} {sel ? `(0-${maxEp})` : ''}
-                    <input type="number" value={replayEpisode}
-                      onChange={(e) => setReplayEpisode(Math.min(Number(e.target.value) || 0, maxEp))}
-                      min={0} max={maxEp}
-                      className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-                  </label>
-                )
-              })()}
-              <div className="flex gap-2">
-                <ActionBtn color="gn" disabled={!ok.replayStart || !replayDataset || !!loading}
-                  onClick={() => { void doReplayStart({ dataset_name: replayDataset, episode: replayEpisode }) }}
-                  title={busy ? busyReason : capabilityReason(replayCapability) || undefined}>
-                  {loading === 'replay' ? t('startingReplay') : t('startReplay')}
-                </ActionBtn>
-                <ActionBtn color="yl" disabled={!ok.replayStop || !!loading} onClick={() => { void doReplayStop() }}>
-                  {replayStopping ? t('stoppingReplay') : t('stopReplay')}
-                </ActionBtn>
-              </div>
-            </div>
-            {state === 'preparing' && owner === 'replaying' && (
-              <StatusDot color="yl" label={prepareStage || t('statePreparing')} />
-            )}
-            {state === 'replaying' && <StatusDot color="gn" label={t('stateReplaying')} />}
-            {replayStopping && <StatusDot color="yl" label={t('stoppingReplay')} />}
+        <div className="grid gap-3 content-start">
+          <h3 className="text-sm font-bold text-tx">推理</h3>
+          <input
+            className="collection-input"
+            value={checkpointPath}
+            onChange={(event) => setCheckpointPath(event.target.value)}
+            placeholder="Checkpoint path"
+          />
+          <div className="collection-form-grid">
+            <input
+              className="collection-input"
+              type="number"
+              min={1}
+              value={inferEpisodes}
+              onChange={(event) => setInferEpisodes(Number(event.target.value) || 1)}
+            />
+            <input
+              className="collection-input"
+              type="number"
+              min={1}
+              value={inferEpisodeTime}
+              onChange={(event) => setInferEpisodeTime(Number(event.target.value) || 300)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <ActionBtn
+              color="ac"
+              disabled={busy || !inferCapability.ready || !!loading || !checkpointPath.trim()}
+              onClick={() => onInferStart({
+                checkpointPath,
+                numEpisodes: inferEpisodes,
+                episodeTime: inferEpisodeTime,
+              })}
+              title={capabilityReason(inferCapability)}
+            >
+              开始推理
+            </ActionBtn>
+            <ActionBtn color="rd" disabled={state !== 'inferring' || !!loading} onClick={onInferStop}>
+              停止推理
+            </ActionBtn>
           </div>
         </div>
+      </div>
+    </section>
+  )
+}
 
-        {/* Bottom: Camera + Servo monitoring */}
-        <div className="grid grid-cols-2 gap-3 min-h-[240px] max-[900px]:grid-cols-1">
-          {camerasExist ? (
-            <CameraPreviewPanel cameras={hwStatus!.cameras} busy={busy} />
-          ) : (
-            <div className="bg-sf rounded-lg p-4 shadow-card flex items-center justify-center text-sm text-tx3">
-              {t('noCameraFeed')}
-            </div>
-          )}
-          <ServoPanel state={state} />
+export default function ControlPage() {
+  const user = useAuthStore((store) => store.user)
+  const isAdmin = user?.level === 'admin'
+  const session = useSessionStore((store) => store.session)
+  const loading = useSessionStore((store) => store.loading)
+  const fetchSessionStatus = useSessionStore((store) => store.fetchSessionStatus)
+  const doTeleopStart = useSessionStore((store) => store.doTeleopStart)
+  const doTeleopStop = useSessionStore((store) => store.doTeleopStop)
+  const doRecordStart = useSessionStore((store) => store.doRecordStart)
+  const doRecordStop = useSessionStore((store) => store.doRecordStop)
+  const doInferStart = useSessionStore((store) => store.doInferStart)
+  const doInferStop = useSessionStore((store) => store.doInferStop)
+  const doSaveEpisode = useSessionStore((store) => store.doSaveEpisode)
+  const doDiscardEpisode = useSessionStore((store) => store.doDiscardEpisode)
+  const doSkipReset = useSessionStore((store) => store.doSkipReset)
+  const hwStatus = useHardwareStore((store) => store.hardwareStatus)
+  const fetchHardwareStatus = useHardwareStore((store) => store.fetchHardwareStatus)
+  const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null)
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [targetDate, setTargetDate] = useState(todayIso())
+  const [collectionError, setCollectionError] = useState('')
+  const [collectionLoading, setCollectionLoading] = useState(false)
+
+  const busy = session.state !== 'idle' && session.state !== 'error'
+
+  async function refreshCollectionStatus() {
+    const [nextAssignments, nextStatus] = await Promise.all([
+      collectionApi.getAssignments(targetDate),
+      collectionApi.getStatus(),
+      fetchSessionStatus(),
+    ])
+    setAssignments(nextAssignments)
+    setCollectionStatus(nextStatus)
+  }
+
+  useEffect(() => {
+    void fetchHardwareStatus()
+    void refreshCollectionStatus().catch((err) => setCollectionError(err instanceof Error ? err.message : String(err)))
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchHardwareStatus()
+        void refreshCollectionStatus().catch((err) => setCollectionError(err instanceof Error ? err.message : String(err)))
+      }
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [fetchHardwareStatus, fetchSessionStatus, targetDate])
+
+  async function runCollectionAction(action: () => Promise<void>) {
+    setCollectionLoading(true)
+    setCollectionError('')
+    try {
+      await action()
+      await refreshCollectionStatus()
+    } catch (err) {
+      setCollectionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCollectionLoading(false)
+    }
+  }
+
+  function handleAdminRecordStart(params: {
+    task: string
+    numEpisodes: number
+    fps: number
+    episodeTime: number
+    resetTime: number
+  }) {
+    void doRecordStart({
+      task: params.task,
+      num_episodes: params.numEpisodes,
+      fps: params.fps,
+      episode_time_s: params.episodeTime,
+      reset_time_s: params.resetTime,
+      use_cameras: true,
+    })
+  }
+
+  async function stopCollectionRun() {
+    await runCollectionAction(async () => {
+      const result = await collectionApi.stopRun()
+      if (result.status === 'pending_cloud_finish') {
+        setCollectionError(`本地采集已结束，云端 finish 待重试：${result.detail || ''}`)
+      }
+    })
+  }
+
+  async function startCollectionRun(assignment: Assignment) {
+    await runCollectionAction(async () => {
+      await collectionApi.startRun(assignment.id)
+    })
+  }
+
+  async function retryPendingFinish() {
+    await runCollectionAction(async () => {
+      await collectionApi.retryPending()
+    })
+  }
+
+  return (
+    <div className="page-enter flex h-full flex-col overflow-y-auto">
+      {collectionError && (
+        <div className="border-b border-rd/30 border-l-4 border-l-rd bg-rd/10 px-4 py-2 text-sm font-medium text-rd">
+          {collectionError}
         </div>
+      )}
+
+      <div className="space-y-3 p-4">
+        <HardwareSummary
+          hwStatus={hwStatus}
+          busy={busy}
+          state={session.state}
+          owner={session.embodiment_owner}
+        />
+
+        <CollectionRunPanel
+          collectionStatus={collectionStatus}
+          assignments={assignments}
+          targetDate={targetDate}
+          session={session}
+          loading={collectionLoading || Boolean(loading)}
+          onDateChange={setTargetDate}
+          onStart={(assignment) => { void startCollectionRun(assignment) }}
+          onStop={() => { void stopCollectionRun() }}
+          onSave={() => { void runCollectionAction(doSaveEpisode) }}
+          onDiscard={() => { void runCollectionAction(doDiscardEpisode) }}
+          onSkipReset={() => { void runCollectionAction(doSkipReset) }}
+          onRetryPending={() => { void retryPendingFinish() }}
+        />
+
+        {isAdmin && (
+          <AdminDebugPanel
+            state={session.state}
+            loading={loading}
+            hwStatus={hwStatus}
+            onTeleopStart={() => { void doTeleopStart() }}
+            onTeleopStop={() => { void doTeleopStop() }}
+            onRecordStart={handleAdminRecordStart}
+            onRecordStop={() => { void doRecordStop() }}
+            onInferStart={(params) => {
+              void doInferStart({
+                checkpoint_path: params.checkpointPath,
+                num_episodes: params.numEpisodes,
+                episode_time_s: params.episodeTime,
+              })
+            }}
+            onInferStop={() => { void doInferStop() }}
+          />
+        )}
       </div>
     </div>
   )
