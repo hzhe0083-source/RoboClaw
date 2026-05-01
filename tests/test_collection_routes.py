@@ -87,6 +87,8 @@ class FakeCloud:
             if self.fail_assignments:
                 raise CloudApiError(401, "用户不存在")
             return self.assignments
+        if path == "/collection/today":
+            return {"today": "2026-05-02", "timezone": "Asia/Shanghai"}
         if path == "/collection/runs/start":
             return {
                 "id": "run-1",
@@ -157,6 +159,16 @@ def test_assignments_forwards_bearer_token(client: TestClient, app: FastAPI) -> 
     assert request["path"] == "/collection/my/assignments"
     assert request["authorization"] == "Bearer abc"
     assert request["params"] == {"target_date": "2026-05-01"}
+
+
+def test_today_forwards_bearer_token(client: TestClient, app: FastAPI) -> None:
+    resp = client.get("/api/collection/today", headers={"Authorization": "Bearer abc"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"today": "2026-05-02", "timezone": "Asia/Shanghai"}
+    request = app.state.fake_cloud.requests[-1]
+    assert request["path"] == "/collection/today"
+    assert request["authorization"] == "Bearer abc"
 
 
 def test_assignments_returns_cloud_error_without_500(client: TestClient, app: FastAPI) -> None:

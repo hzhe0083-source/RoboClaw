@@ -61,6 +61,11 @@ export interface CollectionStatus {
   }
 }
 
+export interface CollectionToday {
+  today: string
+  timezone: string
+}
+
 export interface RunStartResponse {
   status: string
   dataset_name: string
@@ -148,6 +153,7 @@ function patchJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const collectionApi = {
+  getToday: (): Promise<CollectionToday> => collectionRequest('/today'),
   getStatus: (): Promise<CollectionStatus> => collectionRequest('/status'),
   getAssignments: (targetDate?: string): Promise<Assignment[]> => {
     const query = targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : ''

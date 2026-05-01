@@ -114,7 +114,15 @@
     padding: 0 14px;
     font-size: 13px;
     font-weight: 700;
+    font-family: inherit;
     color: var(--ac);
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.collection-link-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 .collection-link-button--primary {

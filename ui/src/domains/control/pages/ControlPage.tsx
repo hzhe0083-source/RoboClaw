@@ -118,6 +118,57 @@ function HardwareSummary({ hwStatus, busy, state, owner }: {
   )
 }
 
+function TeleopPanel({
+  state,
+  loading,
+  hwStatus,
+  owner,
+  onStart,
+  onStop,
+}: {
+  state: SessionState
+  loading: string | null
+  hwStatus: any
+  owner: string
+  onStart: () => void
+  onStop: () => void
+}) {
+  const { t } = useI18n()
+  const teleopCapability = capabilityOf(hwStatus, 'teleop')
+  const teleopStopping = loading === 'teleop-stop' || (state === 'stopping' && owner === 'teleop')
+  const busy = state !== 'idle' && state !== 'error'
+  const busyReason = busy ? `${state}${owner ? ` · ${owner}` : ''}` : ''
+
+  return (
+    <section className="bg-sf rounded-lg p-3.5 shadow-card">
+      <h3 className="mb-3 text-2xs font-mono uppercase tracking-widest text-tx3">{t('teleoperation')}</h3>
+      <div className="grid gap-2">
+        <ActionBtn
+          color="ac"
+          disabled={!canStart(state) || !teleopCapability.ready || !!loading}
+          onClick={onStart}
+          title={busy ? busyReason : capabilityReason(teleopCapability) || undefined}
+        >
+          {loading === 'teleop' ? t('startingTeleop') : t('startTeleop')}
+        </ActionBtn>
+        <ActionBtn color="yl" disabled={state !== 'teleoperating' || !!loading} onClick={onStop}>
+          {teleopStopping ? t('stoppingTeleop') : t('stopTeleop')}
+        </ActionBtn>
+      </div>
+      {(loading === 'teleop' || state === 'teleoperating' || teleopStopping) && (
+        <div className={`mt-3 flex items-center gap-2 text-xs font-medium ${teleopStopping ? 'text-yl' : 'text-ac'}`}>
+          <span className={`h-2 w-2 rounded-full animate-pulse ${teleopStopping ? 'bg-yl' : 'bg-ac'}`} />
+          {loading === 'teleop'
+            ? t('hwInitializing')
+            : teleopStopping
+              ? t('stoppingTeleop')
+              : t('stateTeleoperating')}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function CollectionRunPanel({
   collectionStatus,
   assignments,
@@ -287,8 +338,6 @@ function AdminDebugPanel({
   state,
   loading,
   hwStatus,
-  onTeleopStart,
-  onTeleopStop,
   onRecordStart,
   onRecordStop,
   onInferStart,
@@ -297,8 +346,6 @@ function AdminDebugPanel({
   state: SessionState
   loading: string | null
   hwStatus: any
-  onTeleopStart: () => void
-  onTeleopStop: () => void
   onRecordStart: (params: {
     task: string
     numEpisodes: number
@@ -322,7 +369,6 @@ function AdminDebugPanel({
   const [checkpointPath, setCheckpointPath] = useState('')
   const [inferEpisodes, setInferEpisodes] = useState(1)
   const [inferEpisodeTime, setInferEpisodeTime] = useState(300)
-  const teleopCapability = capabilityOf(hwStatus, 'teleop')
   const recordCapability = capabilityOf(hwStatus, 'record')
   const inferCapability = capabilityOf(hwStatus, 'infer')
   const busy = state !== 'idle' && state !== 'error'
@@ -337,17 +383,7 @@ function AdminDebugPanel({
         <Link className="collection-link-button" to="/collection/admin">任务发布</Link>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <div className="grid gap-2 content-start">
-          <h3 className="text-sm font-bold text-tx">摇操</h3>
-          <ActionBtn color="ac" disabled={!canStart(state) || !teleopCapability.ready || !!loading} onClick={onTeleopStart} title={capabilityReason(teleopCapability)}>
-            开始遥操作
-          </ActionBtn>
-          <ActionBtn color="yl" disabled={state !== 'teleoperating' || !!loading} onClick={onTeleopStop}>
-            停止遥操作
-          </ActionBtn>
-        </div>
-
+      <div className="grid gap-4 xl:grid-cols-2">
         <div className="grid gap-3">
           <h3 className="text-sm font-bold text-tx">数采</h3>
           <input
@@ -531,12 +567,22 @@ export default function ControlPage() {
       )}
 
       <div className="space-y-3 p-4">
-        <HardwareSummary
-          hwStatus={hwStatus}
-          busy={busy}
-          state={session.state}
-          owner={session.embodiment_owner}
-        />
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <HardwareSummary
+            hwStatus={hwStatus}
+            busy={busy}
+            state={session.state}
+            owner={session.embodiment_owner}
+          />
+          <TeleopPanel
+            state={session.state}
+            loading={loading}
+            hwStatus={hwStatus}
+            owner={session.embodiment_owner}
+            onStart={() => { void doTeleopStart() }}
+            onStop={() => { void doTeleopStop() }}
+          />
+        </div>
 
         <CollectionRunPanel
           collectionStatus={collectionStatus}
@@ -558,8 +604,6 @@ export default function ControlPage() {
             state={session.state}
             loading={loading}
             hwStatus={hwStatus}
-            onTeleopStart={() => { void doTeleopStart() }}
-            onTeleopStop={() => { void doTeleopStop() }}
             onRecordStart={handleAdminRecordStart}
             onRecordStop={() => { void doRecordStop() }}
             onInferStart={(params) => {

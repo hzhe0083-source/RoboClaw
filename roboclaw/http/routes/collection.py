@@ -470,6 +470,13 @@ def register_collection_routes(
     async def collection_status() -> dict[str, Any]:
         return coordinator.status()
 
+    @app.get("/api/collection/today")
+    async def collection_today(authorization: str | None = Header(None)) -> Any:
+        coordinator._require_auth(authorization)
+        return await _cloud_or_http_exception(
+            cloud.request("GET", "/collection/today", authorization=authorization)
+        )
+
     @app.get("/api/collection/assignments")
     async def collection_assignments(
         target_date: str | None = Query(None),

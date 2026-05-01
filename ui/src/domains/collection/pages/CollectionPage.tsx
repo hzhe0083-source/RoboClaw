@@ -19,6 +19,9 @@ function progressPct(item: Assignment) {
   return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
 }
 
+const COLLECTION_REFRESH_MS = 5000
+const TODAY_REFRESH_MS = 60000
+
 export default function CollectionPage() {
   const navigate = useNavigate()
   const { isLoggedIn, user, isChecking } = useAuthStore()
@@ -27,7 +30,9 @@ export default function CollectionPage() {
   const doSaveEpisode = useSessionStore((state) => state.doSaveEpisode)
   const doDiscardEpisode = useSessionStore((state) => state.doDiscardEpisode)
   const doSkipReset = useSessionStore((state) => state.doSkipReset)
+  const [serverToday, setServerToday] = useState(todayIso())
   const [targetDate, setTargetDate] = useState(todayIso())
+  const [autoToday, setAutoToday] = useState(true)
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [status, setStatus] = useState<CollectionStatus | null>(null)
   const [loading, setLoading] = useState(false)
@@ -43,11 +48,13 @@ export default function CollectionPage() {
     () => assignments.find((item) => item.id === activeAssignmentId) || null,
     [activeAssignmentId, assignments],
   )
+  const viewingToday = targetDate === serverToday
 
   async function refresh() {
     if (!isLoggedIn) return
+    const assignmentDate = autoToday ? undefined : targetDate
     const [nextAssignments, nextStatus] = await Promise.all([
-      collectionApi.getAssignments(targetDate),
+      collectionApi.getAssignments(assignmentDate),
       collectionApi.getStatus(),
       fetchSessionStatus(),
     ])
@@ -55,14 +62,58 @@ export default function CollectionPage() {
     setStatus(nextStatus)
   }
 
+  function setManualTargetDate(value: string) {
+    setTargetDate(value)
+    setAutoToday(value === serverToday)
+  }
+
+  function resetToServerToday() {
+    setAutoToday(true)
+    setTargetDate(serverToday)
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return
+    let cancelled = false
+
+    async function loadToday() {
+      try {
+        const nextToday = await collectionApi.getToday()
+        if (cancelled) return
+        setServerToday(nextToday.today)
+        if (autoToday) {
+          setTargetDate((current) => (current === nextToday.today ? current : nextToday.today))
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') void loadToday()
+    }
+
+    void loadToday()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadToday()
+    }, TODAY_REFRESH_MS)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      clearInterval(timer)
+    }
+  }, [autoToday, isLoggedIn])
+
   useEffect(() => {
     if (!isLoggedIn) return
     let cancelled = false
     async function load() {
       try {
         setError('')
+        const assignmentDate = autoToday ? undefined : targetDate
         const [nextAssignments, nextStatus] = await Promise.all([
-          collectionApi.getAssignments(targetDate),
+          collectionApi.getAssignments(assignmentDate),
           collectionApi.getStatus(),
           fetchSessionStatus(),
         ])
@@ -76,14 +127,18 @@ export default function CollectionPage() {
     void load()
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') void load()
-    }, 5000)
+    }, COLLECTION_REFRESH_MS)
     return () => {
       cancelled = true
       clearInterval(timer)
     }
-  }, [fetchSessionStatus, isLoggedIn, targetDate])
+  }, [autoToday, fetchSessionStatus, isLoggedIn, targetDate])
 
   async function start(assignment: Assignment) {
+    if (assignment.target_date !== serverToday) {
+      setError(`该任务日期是 ${assignment.target_date}，只能开始今天 ${serverToday} 的任务`)
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -160,8 +215,11 @@ export default function CollectionPage() {
             className="collection-input collection-input--date"
             type="date"
             value={targetDate}
-            onChange={(event) => setTargetDate(event.target.value)}
+            onChange={(event) => setManualTargetDate(event.target.value)}
           />
+          <button className="collection-link-button" type="button" onClick={resetToServerToday} disabled={viewingToday && autoToday}>
+            今日
+          </button>
           {user?.level === 'admin' && (
             <Link className="collection-link-button collection-link-button--primary" to="/collection/admin">任务发布</Link>
           )}
@@ -182,6 +240,13 @@ export default function CollectionPage() {
       </div>
 
       {error && <div className="collection-error">{error}</div>}
+
+      {!viewingToday && (
+        <div className="collection-warning">
+          <span>当前查看 {targetDate}，只能开始云端今天 {serverToday} 的任务</span>
+          <ActionButton variant="secondary" onClick={resetToServerToday} disabled={loading}>回到今日</ActionButton>
+        </div>
+      )}
 
       {status && status.pending_finish_count > 0 && (
         <div className="collection-warning">
@@ -217,7 +282,8 @@ export default function CollectionPage() {
         {assignments.map((assignment) => {
           const pct = progressPct(assignment)
           const isActive = activeAssignmentId === assignment.id
-          const disabled = loading || Boolean(activeAssignmentId) || !assignment.is_active
+          const isTodayAssignment = assignment.target_date === serverToday
+          const disabled = loading || Boolean(activeAssignmentId) || !assignment.is_active || !isTodayAssignment
           return (
             <article className="collection-task-card" key={assignment.id}>
               <div className="collection-task-card__head">
@@ -239,7 +305,7 @@ export default function CollectionPage() {
                 disabled={disabled}
                 onClick={() => start(assignment)}
               >
-                {isActive ? '采集中' : '开始采集'}
+                {isActive ? '采集中' : isTodayAssignment ? '开始采集' : '非今日任务'}
               </ActionButton>
             </article>
           )
