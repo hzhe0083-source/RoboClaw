@@ -180,6 +180,7 @@ class ControlCenterConfig(Base):
 class EvoDataConfig(Base):
     """Cloud evo-data backend used by local collection-task flows."""
 
+    auth_api_url: str = "https://api.evomind-tech.com"
     api_url: str = "http://8.136.130.234/dev-api"
     heartbeat_interval_s: int = 30
     finish_retry_interval_s: int = 60

@@ -1,7 +1,8 @@
 /**
  * EvoMind 云端后端 API 客户端
  *
- * 所有用户认证均通过本地 RoboClaw 后端代理访问 evo-data-dev。
+ * 所有用户认证均通过本地 RoboClaw 后端代理访问 ECS 上的 evo-data 后端。
+ * 账号数据源由云端后端负责，当前生产账号后端连接 RDS evo_data.users。
  * 浏览器 token 保存在 localStorage，本地后端只转发当前请求。
  *
  * 配置：在 ui/.env 或 ui/.env.local 中设置

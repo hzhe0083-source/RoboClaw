@@ -47,7 +47,7 @@ class EvoDataCloudClient:
         if authorization:
             headers["Authorization"] = authorization
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
                 response = await client.request(
                     method,
                     self._url(path),
@@ -71,7 +71,7 @@ class EvoDataCloudClient:
         if content:
             headers["Content-Type"] = request.headers.get("content-type", "application/json")
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
                 response = await client.request(
                     request.method,
                     self._url(path),
@@ -439,12 +439,15 @@ def register_collection_routes(
     *,
     collection_config: Any | None = None,
     cloud_client: EvoDataCloudClient | None = None,
+    auth_client: EvoDataCloudClient | None = None,
     state_dir: Path | None = None,
 ) -> None:
     api_url = getattr(collection_config, "api_url", "http://8.136.130.234/dev-api")
+    auth_api_url = getattr(collection_config, "auth_api_url", "https://api.evomind-tech.com")
     heartbeat_interval_s = int(getattr(collection_config, "heartbeat_interval_s", 30))
     finish_retry_interval_s = int(getattr(collection_config, "finish_retry_interval_s", 60))
     cloud = cloud_client or EvoDataCloudClient(api_url)
+    auth_cloud = auth_client or EvoDataCloudClient(auth_api_url)
     local_state_dir = state_dir or service.datasets.root.parent / "collection_state"
     coordinator = CollectionCoordinator(
         service=service,
@@ -454,6 +457,7 @@ def register_collection_routes(
         finish_retry_interval_s=finish_retry_interval_s,
     )
     app.state.collection_coordinator = coordinator
+    app.state.evo_auth_api_url = auth_cloud.api_url
 
     @app.api_route("/api/evo/{path:path}", methods=["GET", "POST", "PATCH", "DELETE"])
     async def evo_proxy(
@@ -461,7 +465,7 @@ def register_collection_routes(
         request: Request,
         authorization: str | None = Header(None),
     ) -> Response:
-        return await cloud.proxy_raw(request, f"/{path}", authorization)
+        return await auth_cloud.proxy_raw(request, f"/{path}", authorization)
 
     @app.get("/api/collection/status")
     async def collection_status() -> dict[str, Any]:

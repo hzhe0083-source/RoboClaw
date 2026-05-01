@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from fastapi import Response
 from fastapi.testclient import TestClient
 
 from roboclaw.http.routes.collection import CloudApiError, register_collection_routes
@@ -57,8 +58,11 @@ class FakeService:
 
 
 class FakeCloud:
-    def __init__(self) -> None:
+    def __init__(self, name: str = "collection") -> None:
+        self.name = name
+        self.api_url = f"http://fake-{name}"
         self.requests: list[dict[str, Any]] = []
+        self.proxy_requests: list[dict[str, Any]] = []
         self.fail_finish = False
         self.assignments = [{"id": "assign-1", "task_name": "Task A"}]
 
@@ -107,6 +111,17 @@ class FakeCloud:
             return []
         raise AssertionError(f"unexpected cloud path {path}")
 
+    async def proxy_raw(self, request: Any, path: str, authorization: str | None) -> Response:
+        self.proxy_requests.append({
+            "method": request.method,
+            "path": path,
+            "authorization": authorization,
+        })
+        return Response(
+            json.dumps({"source": self.name, "path": path}),
+            media_type="application/json",
+        )
+
 
 @pytest.fixture()
 def app(tmp_path: Path):
@@ -139,6 +154,38 @@ def test_assignments_forwards_bearer_token(client: TestClient, app: FastAPI) -> 
     assert request["path"] == "/collection/my/assignments"
     assert request["authorization"] == "Bearer abc"
     assert request["params"] == {"target_date": "2026-05-01"}
+
+
+def test_evo_auth_proxy_uses_auth_cloud_not_collection_cloud(tmp_path: Path) -> None:
+    app = FastAPI()
+    service = FakeService(tmp_path / "datasets")
+    collection_cloud = FakeCloud("collection")
+    auth_cloud = FakeCloud("auth")
+    register_collection_routes(
+        app,
+        service,  # type: ignore[arg-type]
+        collection_config=type(
+            "Config",
+            (),
+            {
+                "auth_api_url": "https://api.evomind-tech.com",
+                "api_url": "http://8.136.130.234/dev-api",
+                "heartbeat_interval_s": 999,
+                "finish_retry_interval_s": 999,
+            },
+        )(),
+        cloud_client=collection_cloud,  # type: ignore[arg-type]
+        auth_client=auth_cloud,  # type: ignore[arg-type]
+        state_dir=tmp_path / "state",
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.get("/api/evo/auth/me", headers={"Authorization": "Bearer prod-token"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"source": "auth", "path": "/auth/me"}
+    assert auth_cloud.proxy_requests[-1]["authorization"] == "Bearer prod-token"
+    assert collection_cloud.proxy_requests == []
 
 
 def test_start_uses_cloud_task_params_not_browser_params(client: TestClient, app: FastAPI) -> None:
