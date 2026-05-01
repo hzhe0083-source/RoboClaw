@@ -22,13 +22,8 @@ function progressPct(item: Assignment) {
   return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
 }
 
-function parsePhones(value: string) {
-  return Array.from(new Set(
-    value
-      .split(/[\s,，;；]+/)
-      .map((item) => item.trim())
-      .filter(Boolean),
-  ))
+function normalizePhoneRows(rows: string[]) {
+  return Array.from(new Set(rows.map((item) => item.trim()).filter(Boolean)))
 }
 
 function invalidPhones(phones: string[]) {
@@ -47,7 +42,7 @@ export default function CollectionAdminPage() {
   const [progress, setProgress] = useState<Assignment[]>([])
   const [taskForm, setTaskForm] = useState<TaskPayload>(emptyTask)
   const [selectedTaskId, setSelectedTaskId] = useState('')
-  const [phoneText, setPhoneText] = useState('')
+  const [phoneRows, setPhoneRows] = useState([''])
   const [targetDate, setTargetDate] = useState(todayIso())
   const [allDates, setAllDates] = useState(false)
   const [targetHours, setTargetHours] = useState('3')
@@ -118,7 +113,7 @@ export default function CollectionAdminPage() {
     setLoading(true)
     setError('')
     try {
-      const phones = parsePhones(phoneText)
+      const phones = normalizePhoneRows(phoneRows)
       const invalid = invalidPhones(phones)
       if (phones.length === 0) {
         throw new Error('请输入手机号')
@@ -135,13 +130,25 @@ export default function CollectionAdminPage() {
           is_active: true,
         })
       }
-      setPhoneText('')
+      setPhoneRows([''])
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
+  }
+
+  function updatePhoneRow(index: number, value: string) {
+    setPhoneRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? value : row)))
+  }
+
+  function addPhoneRow() {
+    setPhoneRows((rows) => [...rows, ''])
+  }
+
+  function removePhoneRow(index: number) {
+    setPhoneRows((rows) => (rows.length === 1 ? [''] : rows.filter((_, rowIndex) => rowIndex !== index)))
   }
 
   if (isChecking) {
@@ -218,19 +225,42 @@ export default function CollectionAdminPage() {
             </label>
             <label>
               <span>手机号</span>
-              <textarea
-                className="collection-input collection-textarea"
-                value={phoneText}
-                onChange={(event) => setPhoneText(event.target.value)}
-                placeholder={'13800000000\n13900000000'}
-                required
-              />
+              <div className="collection-phone-list">
+                {phoneRows.map((phone, index) => (
+                  <div className="collection-phone-row" key={index}>
+                    <input
+                      className="collection-input"
+                      value={phone}
+                      onChange={(event) => updatePhoneRow(index, event.target.value)}
+                      placeholder="13800000000"
+                      required={index === 0}
+                    />
+                    <button
+                      className="collection-icon-button"
+                      type="button"
+                      onClick={addPhoneRow}
+                      aria-label="添加手机号"
+                    >
+                      +
+                    </button>
+                    <button
+                      className="collection-icon-button collection-icon-button--muted"
+                      type="button"
+                      onClick={() => removePhoneRow(index)}
+                      disabled={phoneRows.length === 1 && !phone}
+                      aria-label="删除手机号"
+                    >
+                      -
+                    </button>
+                  </div>
+                ))}
+              </div>
             </label>
             <label>
               <span>目标小时</span>
               <input className="collection-input" type="number" min={0.1} step={0.1} value={targetHours} onChange={(event) => setTargetHours(event.target.value)} />
             </label>
-            <ActionButton type="submit" disabled={loading || !selectedTaskId || !phoneText.trim()}>发布/更新</ActionButton>
+            <ActionButton type="submit" disabled={loading || !selectedTaskId || normalizePhoneRows(phoneRows).length === 0}>发布/更新</ActionButton>
           </form>
         </div>
       )}
