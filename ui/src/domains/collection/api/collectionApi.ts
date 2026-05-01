@@ -7,7 +7,6 @@ export interface TaskParams {
   episode_time_s: number
   reset_time_s: number
   use_cameras: boolean
-  arms: string
 }
 
 export interface CollectionTask {
@@ -20,7 +19,6 @@ export interface CollectionTask {
   episode_time_s: number
   reset_time_s: number
   use_cameras: boolean
-  arms: string
   dataset_prefix: string
   is_active: boolean
   created_by_id: string | null
@@ -87,17 +85,16 @@ export interface RunStopResponse {
 }
 
 export interface TaskPayload {
-  name: string
+  name?: string
   description?: string
   task_prompt: string
-  num_episodes: number
-  fps: number
-  episode_time_s: number
-  reset_time_s: number
-  use_cameras: boolean
-  arms: string
-  dataset_prefix: string
-  is_active: boolean
+  num_episodes?: number
+  fps?: number
+  episode_time_s?: number
+  reset_time_s?: number
+  use_cameras?: boolean
+  dataset_prefix?: string
+  is_active?: boolean
 }
 
 export interface AssignmentPayload {

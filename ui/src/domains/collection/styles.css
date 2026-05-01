@@ -67,6 +67,42 @@
     resize: vertical;
 }
 
+.collection-phone-list {
+    display: grid;
+    gap: 8px;
+}
+
+.collection-phone-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px 40px;
+    gap: 8px;
+}
+
+.collection-icon-button {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(47, 111, 228, 0.24);
+    border-radius: 8px;
+    background: #2f6fe4;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.collection-icon-button--muted {
+    border-color: rgba(17, 17, 17, 0.12);
+    background: #fff;
+    color: var(--tx2);
+}
+
+.collection-icon-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}
+
 .collection-link-button {
     display: inline-flex;
     min-height: 40px;

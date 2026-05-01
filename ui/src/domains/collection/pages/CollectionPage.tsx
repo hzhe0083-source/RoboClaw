@@ -192,7 +192,7 @@ export default function CollectionPage() {
         <section className="collection-active">
           <div>
             <div className="collection-active__label">当前任务</div>
-            <h3>{activeAssignment.task_name}</h3>
+            <h3>{activeAssignment.task_params.task}</h3>
             <p>{status?.active_run?.dataset_name}</p>
           </div>
           <div className="collection-session-metrics">
@@ -218,8 +218,7 @@ export default function CollectionPage() {
             <article className="collection-task-card" key={assignment.id}>
               <div className="collection-task-card__head">
                 <div>
-                  <h3>{assignment.task_name}</h3>
-                  <p>{assignment.task_params.task}</p>
+                  <h3>{assignment.task_params.task}</h3>
                 </div>
                 <span>{pct}%</span>
               </div>

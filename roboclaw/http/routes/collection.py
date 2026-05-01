@@ -172,7 +172,6 @@ class CollectionCoordinator:
                 reset_time_s=int(task_params.get("reset_time_s") or 10),
                 dataset_name=active.dataset_name,
                 use_cameras=bool(task_params.get("use_cameras", True)),
-                arms=str(task_params.get("arms") or ""),
             )
         except (RuntimeError, KeyError, ValueError) as exc:
             await self._finish_or_queue(

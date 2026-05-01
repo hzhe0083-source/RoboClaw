@@ -200,8 +200,7 @@ function CollectionRunPanel({
               <article className="collection-task-card" key={assignment.id}>
                 <div className="collection-task-card__head">
                   <div>
-                    <h3>{assignment.task_name}</h3>
-                    <p>{assignment.task_params.task}</p>
+                    <h3>{assignment.task_params.task}</h3>
                   </div>
                   <span>{assignmentPct}%</span>
                 </div>

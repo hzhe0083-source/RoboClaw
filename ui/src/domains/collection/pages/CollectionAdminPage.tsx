@@ -22,18 +22,17 @@ function progressPct(item: Assignment) {
   return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
 }
 
+function normalizePhoneRows(rows: string[]) {
+  return Array.from(new Set(rows.map((item) => item.trim()).filter(Boolean)))
+}
+
+function invalidPhones(phones: string[]) {
+  return phones.filter((phone) => !/^1\d{10}$/.test(phone))
+}
+
 const emptyTask: TaskPayload = {
-  name: '',
   description: '',
   task_prompt: '',
-  num_episodes: 1,
-  fps: 30,
-  episode_time_s: 300,
-  reset_time_s: 10,
-  use_cameras: true,
-  arms: '',
-  dataset_prefix: 'rec',
-  is_active: true,
 }
 
 export default function CollectionAdminPage() {
@@ -43,7 +42,7 @@ export default function CollectionAdminPage() {
   const [progress, setProgress] = useState<Assignment[]>([])
   const [taskForm, setTaskForm] = useState<TaskPayload>(emptyTask)
   const [selectedTaskId, setSelectedTaskId] = useState('')
-  const [phone, setPhone] = useState('')
+  const [phoneRows, setPhoneRows] = useState([''])
   const [targetDate, setTargetDate] = useState(todayIso())
   const [allDates, setAllDates] = useState(false)
   const [targetHours, setTargetHours] = useState('3')
@@ -99,7 +98,7 @@ export default function CollectionAdminPage() {
     setError('')
     try {
       const created = await collectionApi.createTask(taskForm)
-      setTaskForm({ ...emptyTask, dataset_prefix: taskForm.dataset_prefix })
+      setTaskForm(emptyTask)
       setSelectedTaskId(created.id)
       await refresh()
     } catch (err) {
@@ -114,20 +113,42 @@ export default function CollectionAdminPage() {
     setLoading(true)
     setError('')
     try {
-      await collectionApi.upsertAssignment({
-        phone,
-        task_id: selectedTaskId,
-        target_date: targetDate,
-        target_seconds: Math.round(Number(targetHours) * 3600),
-        is_active: true,
-      })
-      setPhone('')
+      const phones = normalizePhoneRows(phoneRows)
+      const invalid = invalidPhones(phones)
+      if (phones.length === 0) {
+        throw new Error('请输入手机号')
+      }
+      if (invalid.length > 0) {
+        throw new Error(`手机号格式不正确：${invalid.join(', ')}`)
+      }
+      for (const phone of phones) {
+        await collectionApi.upsertAssignment({
+          phone,
+          task_id: selectedTaskId,
+          target_date: targetDate,
+          target_seconds: Math.round(Number(targetHours) * 3600),
+          is_active: true,
+        })
+      }
+      setPhoneRows([''])
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
+  }
+
+  function updatePhoneRow(index: number, value: string) {
+    setPhoneRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? value : row)))
+  }
+
+  function addPhoneRow() {
+    setPhoneRows((rows) => [...rows, ''])
+  }
+
+  function removePhoneRow(index: number) {
+    setPhoneRows((rows) => (rows.length === 1 ? [''] : rows.filter((_, rowIndex) => rowIndex !== index)))
   }
 
   if (isChecking) {
@@ -186,44 +207,8 @@ export default function CollectionAdminPage() {
           <form className="collection-panel" onSubmit={createTask}>
             <h3>创建任务</h3>
             <label>
-              <span>任务名称</span>
-              <input className="collection-input" value={taskForm.name} onChange={(event) => setTaskForm({ ...taskForm, name: event.target.value })} required />
-            </label>
-            <label>
-              <span>采集动作要求</span>
+              <span>任务描述</span>
               <textarea className="collection-input collection-textarea" value={taskForm.task_prompt} onChange={(event) => setTaskForm({ ...taskForm, task_prompt: event.target.value })} required />
-            </label>
-            <div className="collection-form-grid">
-              <label>
-                <span>Episodes</span>
-                <input className="collection-input" type="number" min={1} value={taskForm.num_episodes} onChange={(event) => setTaskForm({ ...taskForm, num_episodes: Number(event.target.value) })} />
-              </label>
-              <label>
-                <span>FPS</span>
-                <input className="collection-input" type="number" min={1} value={taskForm.fps} onChange={(event) => setTaskForm({ ...taskForm, fps: Number(event.target.value) })} />
-              </label>
-              <label>
-                <span>Episode 秒</span>
-                <input className="collection-input" type="number" min={1} value={taskForm.episode_time_s} onChange={(event) => setTaskForm({ ...taskForm, episode_time_s: Number(event.target.value) })} />
-              </label>
-              <label>
-                <span>Reset 秒</span>
-                <input className="collection-input" type="number" min={0} value={taskForm.reset_time_s} onChange={(event) => setTaskForm({ ...taskForm, reset_time_s: Number(event.target.value) })} />
-              </label>
-            </div>
-            <div className="collection-form-grid">
-              <label>
-                <span>Dataset prefix</span>
-                <input className="collection-input" value={taskForm.dataset_prefix} onChange={(event) => setTaskForm({ ...taskForm, dataset_prefix: event.target.value })} required />
-              </label>
-              <label>
-                <span>Arms</span>
-                <input className="collection-input" value={taskForm.arms} onChange={(event) => setTaskForm({ ...taskForm, arms: event.target.value })} />
-              </label>
-            </div>
-            <label className="collection-checkbox">
-              <input type="checkbox" checked={taskForm.use_cameras} onChange={(event) => setTaskForm({ ...taskForm, use_cameras: event.target.checked })} />
-              <span>使用相机</span>
             </label>
             <ActionButton type="submit" disabled={loading}>创建</ActionButton>
           </form>
@@ -234,19 +219,48 @@ export default function CollectionAdminPage() {
               <span>任务</span>
               <select className="collection-input" value={selectedTaskId} onChange={(event) => setSelectedTaskId(event.target.value)} required>
                 {activeTasks.map((task) => (
-                  <option key={task.id} value={task.id}>{task.name}</option>
+                  <option key={task.id} value={task.id}>{task.task_prompt}</option>
                 ))}
               </select>
             </label>
             <label>
               <span>手机号</span>
-              <input className="collection-input" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="13800000000" required />
+              <div className="collection-phone-list">
+                {phoneRows.map((phone, index) => (
+                  <div className="collection-phone-row" key={index}>
+                    <input
+                      className="collection-input"
+                      value={phone}
+                      onChange={(event) => updatePhoneRow(index, event.target.value)}
+                      placeholder="13800000000"
+                      required={index === 0}
+                    />
+                    <button
+                      className="collection-icon-button"
+                      type="button"
+                      onClick={addPhoneRow}
+                      aria-label="添加手机号"
+                    >
+                      +
+                    </button>
+                    <button
+                      className="collection-icon-button collection-icon-button--muted"
+                      type="button"
+                      onClick={() => removePhoneRow(index)}
+                      disabled={phoneRows.length === 1 && !phone}
+                      aria-label="删除手机号"
+                    >
+                      -
+                    </button>
+                  </div>
+                ))}
+              </div>
             </label>
             <label>
               <span>目标小时</span>
               <input className="collection-input" type="number" min={0.1} step={0.1} value={targetHours} onChange={(event) => setTargetHours(event.target.value)} />
             </label>
-            <ActionButton type="submit" disabled={loading || !selectedTaskId}>发布/更新</ActionButton>
+            <ActionButton type="submit" disabled={loading || !selectedTaskId || normalizePhoneRows(phoneRows).length === 0}>发布/更新</ActionButton>
           </form>
         </div>
       )}
@@ -262,7 +276,7 @@ export default function CollectionAdminPage() {
             return (
               <div className="collection-progress-row" key={item.id}>
                 <div>
-                  <strong>{item.task_name}</strong>
+                  <strong>{item.task_params.task}</strong>
                   <span>{item.target_date} · {item.phone}{item.user_nickname ? ` · ${item.user_nickname}` : ''}</span>
                 </div>
                 <div className="collection-progress-row__bar"><span style={{ width: `${pct}%` }} /></div>
