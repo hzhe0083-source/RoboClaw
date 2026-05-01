@@ -87,6 +87,7 @@ export default function CollectionPage() {
     try {
       await collectionApi.startRun(assignment.id)
       await refresh()
+      navigate('/control')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -141,14 +142,8 @@ export default function CollectionPage() {
   }
 
   if (!isLoggedIn) {
-    return (
-      <div className="collection-page">
-        <div className="collection-empty">
-          <div className="collection-empty__title">需要登录</div>
-          <ActionButton onClick={() => navigate('/login')}>登录账号</ActionButton>
-        </div>
-      </div>
-    )
+    navigate('/login', { replace: true })
+    return null
   }
 
   return (
@@ -180,7 +175,7 @@ export default function CollectionPage() {
           <span style={{ width: `${totalProgress}%` }} />
         </div>
         <StatusPill active={Boolean(status?.active_run)}>
-          {status?.active_run ? 'Recording' : 'Idle'}
+          {status?.active_run ? '采集中' : 'Idle'}
         </StatusPill>
       </div>
 
@@ -241,7 +236,7 @@ export default function CollectionPage() {
                 disabled={disabled}
                 onClick={() => start(assignment)}
               >
-                {isActive ? '录制中' : '开始录制'}
+                {isActive ? '采集中' : '开始采集'}
               </ActionButton>
             </article>
           )

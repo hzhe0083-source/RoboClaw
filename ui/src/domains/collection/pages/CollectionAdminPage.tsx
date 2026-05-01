@@ -158,7 +158,7 @@ export default function CollectionAdminPage() {
             <input className="collection-input" value={taskForm.name} onChange={(event) => setTaskForm({ ...taskForm, name: event.target.value })} required />
           </label>
           <label>
-            <span>指令</span>
+            <span>采集任务描述</span>
             <textarea className="collection-input collection-textarea" value={taskForm.task_prompt} onChange={(event) => setTaskForm({ ...taskForm, task_prompt: event.target.value })} required />
           </label>
           <div className="collection-form-grid">
