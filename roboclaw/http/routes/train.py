@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from roboclaw.config.schema import EvoDataConfig
 from roboclaw.embodied.service import EmbodiedService
 
 
@@ -22,7 +24,18 @@ class TrainStopRequest(BaseModel):
     job_id: str
 
 
-def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
+class RemoteTrainStartRequest(BaseModel):
+    username: str
+    taskName: str = ""
+    action: str
+
+
+def register_train_routes(
+    app: FastAPI,
+    service: EmbodiedService,
+    collection_config: EvoDataConfig | None = None,
+) -> None:
+    evo_data_config = collection_config or EvoDataConfig()
 
     @app.post("/api/train/start")
     async def train_start(body: TrainStartRequest) -> dict[str, Any]:
@@ -47,6 +60,20 @@ def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
             tty_handoff=None,
         )
         return {"message": result}
+
+    @app.post("/api/train/remote/start")
+    async def remote_train_start(body: RemoteTrainStartRequest) -> dict[str, Any]:
+        reader, writer = await asyncio.open_connection(
+            evo_data_config.remote_training_host,
+            evo_data_config.remote_training_port,
+        )
+        payload = json.dumps(body.model_dump(), ensure_ascii=False).encode("utf-8")
+        writer.write(payload)
+        await writer.drain()
+        response = await reader.read(64 * 1024)
+        writer.close()
+        await writer.wait_closed()
+        return json.loads(response.decode("utf-8"))
 
     @app.get("/api/train/current")
     async def train_current() -> dict[str, Any]:

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from roboclaw.embodied.embodiment.interface.video import VideoInterface
 from roboclaw.embodied.embodiment.manifest import Manifest
 from roboclaw.embodied.embodiment.manifest.helpers import save_manifest
 from roboclaw.embodied.toolkit.tools import EmbodiedToolGroup, create_embodied_tools
@@ -28,6 +30,7 @@ _MOCK_SCANNED_PORTS = [
 
 _FOLLOWER_PORT = _MOCK_SCANNED_PORTS[0]["by_id"]
 _LEADER_PORT = _MOCK_SCANNED_PORTS[1]["by_id"]
+_CAMERA_PORT = "/dev/v4l/by-path/pci-0000:00:14.0-usb-0:4:1.0-video-index0"
 
 _MOCK_SETUP = {
     "version": 2,
@@ -49,7 +52,7 @@ _MOCK_SETUP = {
     ],
     "hands": [],
     "cameras": [
-        {"alias": "front", "port": "/dev/video0", "width": 640, "height": 480, "fps": 30},
+        {"alias": "front", "port": _CAMERA_PORT, "width": 640, "height": 480, "fps": 30},
     ],
     "datasets": {"root": "/data"},
     "policies": {"root": "/policies"},
@@ -74,6 +77,24 @@ def calibration_root(tmp_path: Path) -> Path:
     root = tmp_path / "calibration"
     with patch("roboclaw.embodied.embodiment.manifest.helpers.get_calibration_root", return_value=root):
         yield root
+
+
+@pytest.fixture(autouse=True)
+def camera_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_camera = VideoInterface(dev="/dev/video0", by_path=_CAMERA_PORT)
+    monkeypatch.setattr(
+        "roboclaw.embodied.embodiment.hardware.scan.scan_cameras",
+        lambda: [fake_camera],
+    )
+
+    original_exists = os.path.exists
+
+    def mock_exists(path: str | os.PathLike[str]) -> bool:
+        if str(path).startswith("/dev/"):
+            return True
+        return original_exists(path)
+
+    monkeypatch.setattr(os.path, "exists", mock_exists)
 
 
 # ── Auto-timestamp and resume tests ─────────────────────────────────

@@ -206,9 +206,11 @@ def _camera_from_dict(
 ) -> CameraBinding:
     side = data.get("side", "")
     validate_camera_side(side, data.get("alias", ""))
+    port = data.get("port", "")
+
     if scanned_cameras is None:
         interface = VideoInterface.from_stable_address(
-            data.get("port", ""),
+            port,
             width=data.get("width", 640),
             height=data.get("height", 480),
             fps=data.get("fps", 30),
@@ -217,7 +219,7 @@ def _camera_from_dict(
     else:
         from roboclaw.embodied.embodiment.hardware.scan import resolve_camera_interface
 
-        resolved = resolve_camera_interface(data.get("port", ""), scanned_cameras)
+        resolved = resolve_camera_interface(port, scanned_cameras)
         interface = replace(
             resolved,
             width=data.get("width", resolved.width),

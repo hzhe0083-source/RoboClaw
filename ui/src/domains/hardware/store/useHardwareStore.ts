@@ -60,7 +60,7 @@ interface HardwareStore {
 export const useHardwareStore = create<HardwareStore>((set) => ({
   hardwareStatus: null,
   networkInfo: null,
-  servoPollingEnabled: true,
+  servoPollingEnabled: false,
 
   fetchHardwareStatus: async () => {
     set({ hardwareStatus: await api(`${HARDWARE}/status`) })

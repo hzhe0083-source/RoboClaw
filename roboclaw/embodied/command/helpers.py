@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
+from roboclaw.embodied.embodiment.interface.video import (
+    camera_port_requires_rebind,
+    camera_rebind_message,
+)
 from roboclaw.embodied.embodiment.manifest.binding import ArmBinding, ArmRole, CameraBinding
 
 _DATASET_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
@@ -87,6 +92,14 @@ def logs_dir() -> Path:
     return get_roboclaw_home() / "workspace" / "embodied" / "jobs"
 
 
+def _camera_runtime_source(alias: str, resolved: Any) -> str:
+    if sys.platform == "darwin" and getattr(resolved, "is_index_device", False):
+        return resolved.runtime_address
+    if not resolved.by_path:
+        raise ActionError(f"Camera '{alias}' has no by-path device.")
+    return resolved.by_path
+
+
 def resolve_cameras(cameras: list[CameraBinding]) -> dict[str, dict[str, Any]]:
     """Build camera config dict for lerobot CLI from manifest camera bindings."""
     from roboclaw.embodied.embodiment.hardware.scan import (
@@ -94,19 +107,24 @@ def resolve_cameras(cameras: list[CameraBinding]) -> dict[str, dict[str, Any]]:
         scan_cameras,
     )
 
-    scanned_cameras = scan_cameras() if cameras else []
-    result: dict[str, dict[str, Any]] = {}
+    configured_cameras: list[CameraBinding] = []
     for cam in cameras:
         if not cam.alias or not cam.port:
             continue
+        if camera_port_requires_rebind(cam.port):
+            raise ActionError(camera_rebind_message(cam.alias, cam.port))
+        configured_cameras.append(cam)
+
+    scanned_cameras = scan_cameras() if configured_cameras else []
+    result: dict[str, dict[str, Any]] = {}
+    for cam in configured_cameras:
         resolved = resolve_camera_interface(cam.port, scanned_cameras)
-        runtime_address = resolved.runtime_address
-        if not runtime_address:
+        runtime_address = _camera_runtime_source(cam.alias, resolved)
+        if not runtime_address or not resolved.exists:
             raise ActionError(f"Camera '{cam.alias}' is disconnected.")
-        index_or_path: str | int = int(runtime_address) if runtime_address.isdigit() else runtime_address
         config: dict[str, Any] = {
             "type": "opencv",
-            "index_or_path": index_or_path,
+            "index_or_path": runtime_address,
             "width": cam.interface.width,
             "height": cam.interface.height,
             "fps": cam.interface.fps or 30,

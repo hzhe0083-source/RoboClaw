@@ -25,6 +25,8 @@ from roboclaw.http.routes import register_all_routes
 # Mock setup data
 # ---------------------------------------------------------------------------
 
+MOCK_CAMERA_PORT = "/dev/v4l/by-path/pci-0000:00:14.0-usb-0:4:1.0-video-index0"
+
 MOCK_SETUP = {
     "version": 2,
     "arms": [
@@ -44,7 +46,7 @@ MOCK_SETUP = {
         },
     ],
     "cameras": [
-        {"alias": "top", "port": "/dev/video0", "width": 640, "height": 480},
+        {"alias": "top", "port": MOCK_CAMERA_PORT, "width": 640, "height": 480},
     ],
     "datasets": {"root": "/tmp/datasets"},
     "policies": {"root": "/tmp/policies"},
@@ -58,6 +60,14 @@ MOCK_SETUP = {
 @pytest.fixture()
 def service(tmp_path, monkeypatch):
     """EmbodiedService with mocked manifest and /dev/* paths always 'connected'."""
+    from roboclaw.embodied.embodiment.interface.video import VideoInterface
+
+    fake_camera = VideoInterface(dev="/dev/video0", by_path=MOCK_CAMERA_PORT)
+    monkeypatch.setattr(
+        "roboclaw.embodied.embodiment.hardware.scan.scan_cameras",
+        lambda: [fake_camera],
+    )
+
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(MOCK_SETUP, indent=2), encoding="utf-8")
     manifest = Manifest(path=manifest_path)

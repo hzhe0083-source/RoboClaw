@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from roboclaw.embodied.embodiment.interface.base import Interface
+
+_VIDEO_BY_ID_PREFIX = "/dev/v4l/by-id/"
+_VIDEO_BY_PATH_PREFIX = "/dev/v4l/by-path/"
+_VIDEO_INDEX_RE = re.compile(r"^/dev/video\d+$")
+
+
+def camera_port_requires_rebind(address: str) -> bool:
+    return address.startswith(_VIDEO_BY_ID_PREFIX) or bool(_VIDEO_INDEX_RE.match(address))
+
+
+def camera_rebind_message(alias: str, address: str) -> str:
+    return (
+        f"Camera '{alias}' is configured as '{address}'. "
+        "Rebind the camera so manifest.json stores a /dev/v4l/by-path/... port."
+    )
 
 
 @dataclass(frozen=True)
@@ -40,7 +56,9 @@ class VideoInterface(Interface):
 
     @property
     def runtime_address(self) -> str:
-        return self.dev or self.by_path or self.by_id
+        if self.is_index_device:
+            return self.dev
+        return self.by_path or self.by_id or self.dev
 
     @property
     def preview_address(self) -> str:
@@ -50,7 +68,7 @@ class VideoInterface(Interface):
 
     @property
     def stable_id(self) -> str:
-        return self.by_id or self.by_path or self.dev
+        return self.by_path or self.by_id or self.dev
 
     @property
     def exists(self) -> bool:
@@ -78,9 +96,9 @@ class VideoInterface(Interface):
 
     @classmethod
     def from_stable_address(cls, address: str, **kwargs: Any) -> VideoInterface:
-        if address.startswith("/dev/v4l/by-id/"):
+        if address.startswith(_VIDEO_BY_ID_PREFIX):
             return cls(by_id=address, **kwargs)
-        if address.startswith("/dev/v4l/by-path/"):
+        if address.startswith(_VIDEO_BY_PATH_PREFIX):
             return cls(by_path=address, **kwargs)
         if address.startswith("/dev/"):
             return cls(dev=address, **kwargs)
