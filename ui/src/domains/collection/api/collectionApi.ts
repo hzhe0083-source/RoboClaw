@@ -79,7 +79,7 @@ export interface RunStartResponse {
 }
 
 export interface RunStopResponse {
-  status: 'finished' | 'failed' | 'pending_cloud_finish'
+  status: 'finished' | 'failed' | 'pending_cloud_finish' | 'idle'
   pending_finish_count: number
   detail?: string
   local_stop_error?: string | null
@@ -87,7 +87,7 @@ export interface RunStopResponse {
     id: string
     status: string
     duration_seconds: number
-  }
+  } | null
 }
 
 export interface TaskPayload {
@@ -165,14 +165,14 @@ export const collectionApi = {
   stopRun: (): Promise<RunStopResponse> => postJson('/runs/stop'),
   retryPending: (): Promise<{ status: string; synced: number; pending_finish_count: number }> =>
     postJson('/pending/retry'),
-  listTasks: (): Promise<CollectionTask[]> => collectionRequest('/admin/tasks?include_inactive=true'),
-  createTask: (payload: TaskPayload): Promise<CollectionTask> => postJson('/admin/tasks', payload),
+  listTasks: (): Promise<CollectionTask[]> => collectionRequest('/publish/tasks?include_inactive=true'),
+  createTask: (payload: TaskPayload): Promise<CollectionTask> => postJson('/publish/tasks', payload),
   updateTask: (taskId: string, payload: Partial<TaskPayload>): Promise<CollectionTask> =>
-    patchJson(`/admin/tasks/${taskId}`, payload),
+    patchJson(`/publish/tasks/${taskId}`, payload),
   upsertAssignment: (payload: AssignmentPayload): Promise<Assignment> =>
-    postJson('/admin/assignments', payload),
+    postJson('/publish/assignments', payload),
   getProgress: (targetDate?: string): Promise<Assignment[]> => {
     const query = targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : ''
-    return collectionRequest(`/admin/progress${query}`)
+    return collectionRequest(`/publish/progress${query}`)
   },
 }

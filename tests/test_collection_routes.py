@@ -259,6 +259,51 @@ def test_start_failure_marks_cloud_run_failed(client: TestClient, app: FastAPI) 
     assert finish["json"]["metadata"] == {"local_start_failed": True}
 
 
+def test_stop_without_active_run_clears_local_session_error(client: TestClient, app: FastAPI) -> None:
+    app.state.fake_service.status.update({
+        "state": "error",
+        "record_phase": "error",
+        "error": "camera failed to open",
+    })
+    request_count = len(app.state.fake_cloud.requests)
+
+    resp = client.post("/api/collection/runs/stop", headers={"Authorization": "Bearer abc"})
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "failed"
+    assert resp.json()["run"] is None
+    assert resp.json()["local_stop_error"] == "camera failed to open"
+    assert len(app.state.fake_cloud.requests) == request_count
+
+    status = client.get("/api/collection/status")
+    assert status.status_code == 200
+    assert status.json()["active_run"] is None
+    assert status.json()["session"]["state"] == "idle"
+    assert status.json()["session"]["error"] == ""
+
+
+def test_stop_without_active_run_is_idempotent_when_idle(client: TestClient, app: FastAPI) -> None:
+    request_count = len(app.state.fake_cloud.requests)
+
+    resp = client.post("/api/collection/runs/stop", headers={"Authorization": "Bearer abc"})
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "idle"
+    assert resp.json()["run"] is None
+    assert resp.json()["local_stop_error"] is None
+    assert len(app.state.fake_cloud.requests) == request_count
+    assert app.state.fake_service.stopped is False
+
+
+def test_publish_tasks_route_proxies_admin_cloud_endpoint(client: TestClient, app: FastAPI) -> None:
+    resp = client.get("/api/collection/publish/tasks?include_inactive=true", headers={"Authorization": "Bearer abc"})
+
+    assert resp.status_code == 200
+    request = app.state.fake_cloud.requests[-1]
+    assert request["path"] == "/collection/admin/tasks"
+    assert request["params"] == {"include_inactive": True}
+
+
 def test_finish_failure_is_queued_without_persisting_token(client: TestClient, app: FastAPI, tmp_path: Path) -> None:
     start = client.post(
         "/api/collection/runs/start",

@@ -7,13 +7,14 @@ import json
 import socket
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastapi import Body, FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
-from roboclaw.embodied.service import EmbodiedService
+if TYPE_CHECKING:
+    from roboclaw.embodied.service import EmbodiedService
 
 
 class CollectionRunStartRequest(BaseModel):
@@ -198,7 +199,22 @@ class CollectionCoordinator:
     async def stop(self, authorization: str | None) -> dict[str, Any]:
         self._require_auth(authorization)
         if self.active is None:
-            raise HTTPException(404, "没有进行中的云端采集")
+            session = self.service.get_status()
+            session_error = str(session.get("error") or "")
+            if session.get("state") == "error" or session_error:
+                await self.service.dismiss_error()
+                return {
+                    "status": "failed",
+                    "run": None,
+                    "local_stop_error": session_error or "session error cleared",
+                    "pending_finish_count": len(self._load_pending()),
+                }
+            return {
+                "status": "idle",
+                "run": None,
+                "local_stop_error": None,
+                "pending_finish_count": len(self._load_pending()),
+            }
 
         active = self.active
         session_before_stop = self.service.get_status()
@@ -545,8 +561,8 @@ def register_collection_routes(
     ) -> dict[str, Any]:
         return await coordinator.retry_pending(authorization)
 
-    @app.get("/api/collection/admin/tasks")
-    async def admin_tasks(
+    @app.get("/api/collection/publish/tasks")
+    async def publish_tasks(
         include_inactive: bool = False,
         authorization: str | None = Header(None),
     ) -> Any:
@@ -559,8 +575,8 @@ def register_collection_routes(
             )
         )
 
-    @app.post("/api/collection/admin/tasks")
-    async def admin_create_task(
+    @app.post("/api/collection/publish/tasks")
+    async def publish_create_task(
         body: dict[str, Any] = Body(...),
         authorization: str | None = Header(None),
     ) -> Any:
@@ -568,8 +584,8 @@ def register_collection_routes(
             cloud.request("POST", "/collection/admin/tasks", authorization=authorization, json_body=body)
         )
 
-    @app.patch("/api/collection/admin/tasks/{task_id}")
-    async def admin_update_task(
+    @app.patch("/api/collection/publish/tasks/{task_id}")
+    async def publish_update_task(
         task_id: str,
         body: dict[str, Any] = Body(...),
         authorization: str | None = Header(None),
@@ -583,8 +599,8 @@ def register_collection_routes(
             )
         )
 
-    @app.post("/api/collection/admin/assignments")
-    async def admin_upsert_assignment(
+    @app.post("/api/collection/publish/assignments")
+    async def publish_upsert_assignment(
         body: dict[str, Any] = Body(...),
         authorization: str | None = Header(None),
     ) -> Any:
@@ -592,8 +608,8 @@ def register_collection_routes(
             cloud.request("POST", "/collection/admin/assignments", authorization=authorization, json_body=body)
         )
 
-    @app.get("/api/collection/admin/progress")
-    async def admin_progress(
+    @app.get("/api/collection/publish/progress")
+    async def publish_progress(
         target_date: str | None = Query(None),
         authorization: str | None = Header(None),
     ) -> Any:

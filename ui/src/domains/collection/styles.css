@@ -222,6 +222,12 @@
     color: #7a5200;
 }
 
+.collection-warning--error {
+    border-color: rgba(180, 40, 70, 0.22);
+    background: rgba(180, 40, 70, 0.08);
+    color: #8c1d38;
+}
+
 .collection-active {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -282,6 +288,30 @@
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.9);
     padding: 16px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+button.collection-task-card {
+    cursor: pointer;
+}
+
+button.collection-task-card:not(:disabled):hover {
+    transform: translateY(-1px);
+    border-color: rgba(47, 111, 228, 0.36);
+    box-shadow: 0 14px 28px rgba(31, 61, 112, 0.1);
+}
+
+button.collection-task-card:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.collection-task-card--selected {
+    border-color: rgba(47, 111, 228, 0.6);
+    box-shadow: 0 0 0 3px rgba(47, 111, 228, 0.12), 0 14px 28px rgba(31, 61, 112, 0.1);
 }
 
 .collection-task-card__head {
@@ -300,6 +330,16 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+.collection-task-card__state {
+    border-top: 1px solid rgba(47, 111, 228, 0.12);
+    padding-top: 10px;
+    color: var(--ac);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .collection-empty {
@@ -330,7 +370,7 @@
     font-size: 13px;
 }
 
-.collection-admin-layout {
+.collection-publish-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
     gap: 14px;
@@ -414,7 +454,7 @@
     .collection-toolbar,
     .collection-summary,
     .collection-active,
-    .collection-admin-layout,
+    .collection-publish-layout,
     .collection-panel__head,
     .collection-progress-row {
         grid-template-columns: 1fr;

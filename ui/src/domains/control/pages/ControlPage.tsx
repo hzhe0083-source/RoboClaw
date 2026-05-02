@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import { collectionApi, type Assignment, type CollectionStatus } from '@/domains/collection/api/collectionApi'
+import { assignmentProgressPct, formatHours, todayIso } from '@/domains/collection/lib/metrics'
 import { useHardwareStore, type OperationCapability } from '@/domains/hardware/store/useHardwareStore'
-import { useSessionStore, type SessionState } from '@/domains/session/store/useSessionStore'
+import { useSessionStore, type SessionState, type SessionStatus } from '@/domains/session/store/useSessionStore'
 import { useI18n } from '@/i18n'
-import { useAuthStore } from '@/shared/lib/authStore'
 import { ActionButton } from '@/shared/ui'
 
+const COLLECTION_REFRESH_MS = 5000
+const TODAY_REFRESH_MS = 60000
 const blockedCapability: OperationCapability = { ready: false, missing: [] }
 
 function ActionBtn({
@@ -46,16 +47,7 @@ function capabilityOf(hwStatus: any, name: string): OperationCapability {
 }
 
 function canStart(state: SessionState) {
-  return state === 'idle' || state === 'error'
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function formatHours(seconds: number) {
-  const hours = seconds / 3600
-  return `${hours.toFixed(hours >= 10 ? 0 : 1)} h`
+  return state === 'idle'
 }
 
 function formatSeconds(seconds: number) {
@@ -65,9 +57,13 @@ function formatSeconds(seconds: number) {
   return rest ? `${minutes}m ${rest}s` : `${minutes}m`
 }
 
-function assignmentProgressPct(item: Assignment) {
-  if (item.target_seconds <= 0) return 0
-  return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
+function sessionHasError(session: SessionStatus) {
+  return session.state === 'error'
+    || Boolean(session.error)
+}
+
+function sessionErrorText(session: SessionStatus) {
+  return session.error || '本地 session 处于 error 状态'
 }
 
 function HardwareSummary({ hwStatus, busy, state, owner }: {
@@ -173,9 +169,12 @@ function CollectionRunPanel({
   collectionStatus,
   assignments,
   targetDate,
+  serverToday,
+  selectedAssignmentId,
   session,
   loading,
   onDateChange,
+  onSelect,
   onStart,
   onStop,
   onSave,
@@ -186,9 +185,12 @@ function CollectionRunPanel({
   collectionStatus: CollectionStatus | null
   assignments: Assignment[]
   targetDate: string
-  session: any
+  serverToday: string
+  selectedAssignmentId: string
+  session: SessionStatus
   loading: boolean
   onDateChange: (value: string) => void
+  onSelect: (assignmentId: string) => void
   onStart: (assignment: Assignment) => void
   onStop: () => void
   onSave: () => void
@@ -197,6 +199,10 @@ function CollectionRunPanel({
   onRetryPending: () => void
 }) {
   const active = collectionStatus?.active_run
+  const selectedAssignment = useMemo(
+    () => assignments.find((assignment) => assignment.id === selectedAssignmentId) || null,
+    [assignments, selectedAssignmentId],
+  )
   const totalTargetSeconds = assignments.reduce((sum, item) => sum + item.target_seconds, 0)
   const totalCompletedSeconds = assignments.reduce((sum, item) => sum + item.completed_seconds, 0)
   const totalProgress = totalTargetSeconds > 0 ? Math.min(100, Math.round((totalCompletedSeconds / totalTargetSeconds) * 100)) : 0
@@ -204,6 +210,19 @@ function CollectionRunPanel({
   const pct = targetEpisodes > 0 ? Math.min(100, Math.round((session.saved_episodes / targetEpisodes) * 100)) : 0
   const canControlEpisode = session.record_phase === 'recording' && !session.record_pending_command
   const canSkipResetWait = session.record_phase === 'resetting' && !session.record_pending_command
+  const hasError = sessionHasError(session)
+  const errorText = sessionErrorText(session)
+  const busyWithoutActive = session.state !== 'idle'
+  const viewingToday = targetDate === serverToday
+  const taskSelectionDisabled = loading || hasError || busyWithoutActive
+  const selectedCanStart = Boolean(
+    selectedAssignment
+      && !loading
+      && !hasError
+      && !busyWithoutActive
+      && viewingToday
+      && selectedAssignment.is_active,
+  )
 
   if (!active) {
     return (
@@ -245,12 +264,59 @@ function CollectionRunPanel({
           </div>
         )}
 
+        {hasError && (
+          <div className="collection-warning collection-warning--error">
+            <span>Session error：{errorText}</span>
+            <ActionButton variant="danger" onClick={onStop} disabled={loading}>结束采集</ActionButton>
+          </div>
+        )}
+
+        {selectedAssignment && (
+          <section className="collection-panel collection-panel--wide">
+            <div className="collection-panel__head">
+              <div>
+                <h3>录制</h3>
+                <span>{selectedAssignment.task_params.task}</span>
+              </div>
+              <div className="collection-task-card__meta">
+                <span>{formatHours(selectedAssignment.completed_seconds)} / {formatHours(selectedAssignment.target_seconds)}</span>
+                <span>{selectedAssignment.task_params.fps} fps</span>
+                <span>{selectedAssignment.task_params.num_episodes} eps</span>
+              </div>
+              <ActionButton
+                onClick={() => onStart(selectedAssignment)}
+                disabled={!selectedCanStart}
+              >
+                开始录制
+              </ActionButton>
+            </div>
+            {!viewingToday && (
+              <div className="collection-warning">
+                <span>只能启动今天的任务；当前查看 {targetDate}，今天是 {serverToday}</span>
+              </div>
+            )}
+            {hasError && (
+              <div className="collection-error">
+                error 未清理前不能开始录制。点击上方“结束采集”清掉本地错误。
+              </div>
+            )}
+          </section>
+        )}
+
         <div className="collection-grid">
           {assignments.map((assignment) => {
             const assignmentPct = assignmentProgressPct(assignment)
-            const disabled = loading || !assignment.is_active
+            const isSelected = assignment.id === selectedAssignmentId
+            const disabled = taskSelectionDisabled || !assignment.is_active
             return (
-              <article className="collection-task-card" key={assignment.id}>
+              <button
+                className={`collection-task-card ${isSelected ? 'collection-task-card--selected' : ''}`}
+                key={assignment.id}
+                type="button"
+                disabled={disabled}
+                aria-pressed={isSelected}
+                onClick={() => onSelect(assignment.id)}
+              >
                 <div className="collection-task-card__head">
                   <div>
                     <h3>{assignment.task_params.task}</h3>
@@ -265,10 +331,10 @@ function CollectionRunPanel({
                   <span>{assignment.task_params.fps} fps</span>
                   <span>{assignment.task_params.num_episodes} eps</span>
                 </div>
-                <ActionButton disabled={disabled} onClick={() => onStart(assignment)}>
-                  开始采集
-                </ActionButton>
-              </article>
+                <div className="collection-task-card__state">
+                  {isSelected ? '已选择' : assignment.is_active ? '选择任务' : '已停用'}
+                </div>
+              </button>
             )
           })}
         </div>
@@ -292,10 +358,18 @@ function CollectionRunPanel({
           <p className="mt-1 text-sm text-tx2">{active.dataset_name}</p>
           <p className="mt-2 max-w-3xl text-sm text-tx">{active.task_params.task}</p>
         </div>
-        <div className="grid min-w-[220px] grid-cols-2 gap-2 text-sm">
+        <div className="grid min-w-[280px] grid-cols-2 gap-2 text-sm lg:grid-cols-4">
           <div className="rounded-lg bg-sf2 p-3">
             <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Episodes</div>
             <div className="mt-1 text-lg font-bold text-tx">{session.saved_episodes}/{targetEpisodes}</div>
+          </div>
+          <div className="rounded-lg bg-sf2 p-3">
+            <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Frames</div>
+            <div className="mt-1 text-lg font-bold text-tx">{session.total_frames}</div>
+          </div>
+          <div className="rounded-lg bg-sf2 p-3">
+            <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Phase</div>
+            <div className="mt-1 text-lg font-bold text-tx">{session.record_phase || session.state}</div>
           </div>
           <div className="rounded-lg bg-sf2 p-3">
             <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Elapsed</div>
@@ -303,6 +377,13 @@ function CollectionRunPanel({
           </div>
         </div>
       </div>
+
+      {hasError && (
+        <div className="collection-warning collection-warning--error mt-4">
+          <span>Session error：{errorText}</span>
+          <ActionButton variant="danger" onClick={onStop} disabled={loading}>结束采集</ActionButton>
+        </div>
+      )}
 
       <div className="mt-4 h-2 overflow-hidden rounded-full bg-sf2">
         <div
@@ -327,151 +408,16 @@ function CollectionRunPanel({
           结束采集
         </ActionBtn>
       </div>
-      <div className="mt-3 text-xs font-medium text-tx2">
-        状态：{session.record_phase || session.state}
-      </div>
-    </section>
-  )
-}
-
-function AdminDebugPanel({
-  state,
-  loading,
-  hwStatus,
-  onRecordStart,
-  onRecordStop,
-  onInferStart,
-  onInferStop,
-}: {
-  state: SessionState
-  loading: string | null
-  hwStatus: any
-  onRecordStart: (params: {
-    task: string
-    numEpisodes: number
-    fps: number
-    episodeTime: number
-    resetTime: number
-  }) => void
-  onRecordStop: () => void
-  onInferStart: (params: {
-    checkpointPath: string
-    numEpisodes: number
-    episodeTime: number
-  }) => void
-  onInferStop: () => void
-}) {
-  const [task, setTask] = useState('')
-  const [fps, setFps] = useState(30)
-  const [numEpisodes, setNumEpisodes] = useState(1)
-  const [episodeTime, setEpisodeTime] = useState(300)
-  const [resetTime, setResetTime] = useState(10)
-  const [checkpointPath, setCheckpointPath] = useState('')
-  const [inferEpisodes, setInferEpisodes] = useState(1)
-  const [inferEpisodeTime, setInferEpisodeTime] = useState(300)
-  const recordCapability = capabilityOf(hwStatus, 'record')
-  const inferCapability = capabilityOf(hwStatus, 'infer')
-  const busy = state !== 'idle' && state !== 'error'
-
-  return (
-    <section className="bg-sf rounded-lg p-5 shadow-card">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Control</div>
-          <h2 className="mt-2 text-xl font-bold text-tx">控制平台</h2>
-        </div>
-        <Link className="collection-link-button" to="/collection/admin">任务发布</Link>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="grid gap-3">
-          <h3 className="text-sm font-bold text-tx">数采</h3>
-          <input
-            className="collection-input"
-            value={task}
-            onChange={(event) => setTask(event.target.value)}
-            placeholder="调试采集任务描述"
-          />
-          <div className="collection-form-grid">
-            <input className="collection-input" type="number" min={1} value={numEpisodes} onChange={(event) => setNumEpisodes(Number(event.target.value) || 1)} />
-            <input className="collection-input" type="number" min={1} value={fps} onChange={(event) => setFps(Number(event.target.value) || 30)} />
-            <input className="collection-input" type="number" min={1} value={episodeTime} onChange={(event) => setEpisodeTime(Number(event.target.value) || 300)} />
-            <input className="collection-input" type="number" min={0} value={resetTime} onChange={(event) => setResetTime(Number(event.target.value) || 0)} />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <ActionBtn
-              color="gn"
-              disabled={busy || !recordCapability.ready || !!loading || !task.trim()}
-              onClick={() => onRecordStart({ task, numEpisodes, fps, episodeTime, resetTime })}
-              title={capabilityReason(recordCapability)}
-            >
-              开始调试采集
-            </ActionBtn>
-            <ActionBtn color="rd" disabled={state !== 'recording' || !!loading} onClick={onRecordStop}>
-              停止调试采集
-            </ActionBtn>
-          </div>
-        </div>
-
-        <div className="grid gap-3 content-start">
-          <h3 className="text-sm font-bold text-tx">推理</h3>
-          <input
-            className="collection-input"
-            value={checkpointPath}
-            onChange={(event) => setCheckpointPath(event.target.value)}
-            placeholder="Checkpoint path"
-          />
-          <div className="collection-form-grid">
-            <input
-              className="collection-input"
-              type="number"
-              min={1}
-              value={inferEpisodes}
-              onChange={(event) => setInferEpisodes(Number(event.target.value) || 1)}
-            />
-            <input
-              className="collection-input"
-              type="number"
-              min={1}
-              value={inferEpisodeTime}
-              onChange={(event) => setInferEpisodeTime(Number(event.target.value) || 300)}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <ActionBtn
-              color="ac"
-              disabled={busy || !inferCapability.ready || !!loading || !checkpointPath.trim()}
-              onClick={() => onInferStart({
-                checkpointPath,
-                numEpisodes: inferEpisodes,
-                episodeTime: inferEpisodeTime,
-              })}
-              title={capabilityReason(inferCapability)}
-            >
-              开始推理
-            </ActionBtn>
-            <ActionBtn color="rd" disabled={state !== 'inferring' || !!loading} onClick={onInferStop}>
-              停止推理
-            </ActionBtn>
-          </div>
-        </div>
-      </div>
     </section>
   )
 }
 
 export default function ControlPage() {
-  const user = useAuthStore((store) => store.user)
-  const isAdmin = user?.level === 'admin'
   const session = useSessionStore((store) => store.session)
   const loading = useSessionStore((store) => store.loading)
   const fetchSessionStatus = useSessionStore((store) => store.fetchSessionStatus)
   const doTeleopStart = useSessionStore((store) => store.doTeleopStart)
   const doTeleopStop = useSessionStore((store) => store.doTeleopStop)
-  const doRecordStart = useSessionStore((store) => store.doRecordStart)
-  const doRecordStop = useSessionStore((store) => store.doRecordStop)
-  const doInferStart = useSessionStore((store) => store.doInferStart)
-  const doInferStop = useSessionStore((store) => store.doInferStop)
   const doSaveEpisode = useSessionStore((store) => store.doSaveEpisode)
   const doDiscardEpisode = useSessionStore((store) => store.doDiscardEpisode)
   const doSkipReset = useSessionStore((store) => store.doSkipReset)
@@ -479,8 +425,12 @@ export default function ControlPage() {
   const fetchHardwareStatus = useHardwareStore((store) => store.fetchHardwareStatus)
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null)
   const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [serverToday, setServerToday] = useState(todayIso())
   const [targetDate, setTargetDate] = useState(todayIso())
+  const [autoToday, setAutoToday] = useState(true)
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState('')
   const [collectionError, setCollectionError] = useState('')
+  const [collectionNotice, setCollectionNotice] = useState('')
   const [collectionLoading, setCollectionLoading] = useState(false)
 
   const busy = session.state !== 'idle' && session.state !== 'error'
@@ -495,6 +445,14 @@ export default function ControlPage() {
     setCollectionStatus(nextStatus)
   }
 
+  async function refreshToday() {
+    const next = await collectionApi.getToday()
+    setServerToday(next.today)
+    if (autoToday) {
+      setTargetDate(next.today)
+    }
+  }
+
   useEffect(() => {
     void fetchHardwareStatus()
     void refreshCollectionStatus().catch((err) => setCollectionError(err instanceof Error ? err.message : String(err)))
@@ -503,13 +461,38 @@ export default function ControlPage() {
         void fetchHardwareStatus()
         void refreshCollectionStatus().catch((err) => setCollectionError(err instanceof Error ? err.message : String(err)))
       }
-    }, 5000)
+    }, COLLECTION_REFRESH_MS)
     return () => clearInterval(timer)
   }, [fetchHardwareStatus, fetchSessionStatus, targetDate])
+
+  useEffect(() => {
+    void refreshToday().catch((err) => setCollectionError(err instanceof Error ? err.message : String(err)))
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void refreshToday().catch((err) => setCollectionError(err instanceof Error ? err.message : String(err)))
+      }
+    }, TODAY_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [autoToday])
+
+  useEffect(() => {
+    const activeAssignmentId = collectionStatus?.active_run?.assignment_id
+    if (activeAssignmentId) {
+      setSelectedAssignmentId(activeAssignmentId)
+    }
+  }, [collectionStatus?.active_run?.assignment_id])
+
+  useEffect(() => {
+    if (!selectedAssignmentId || collectionStatus?.active_run) return
+    if (!assignments.some((assignment) => assignment.id === selectedAssignmentId)) {
+      setSelectedAssignmentId('')
+    }
+  }, [assignments, collectionStatus?.active_run, selectedAssignmentId])
 
   async function runCollectionAction(action: () => Promise<void>) {
     setCollectionLoading(true)
     setCollectionError('')
+    setCollectionNotice('')
     try {
       await action()
       await refreshCollectionStatus()
@@ -520,30 +503,23 @@ export default function ControlPage() {
     }
   }
 
-  function handleAdminRecordStart(params: {
-    task: string
-    numEpisodes: number
-    fps: number
-    episodeTime: number
-    resetTime: number
-  }) {
-    void doRecordStart({
-      task: params.task,
-      num_episodes: params.numEpisodes,
-      fps: params.fps,
-      episode_time_s: params.episodeTime,
-      reset_time_s: params.resetTime,
-      use_cameras: true,
-    })
-  }
-
   async function stopCollectionRun() {
     await runCollectionAction(async () => {
       const result = await collectionApi.stopRun()
       if (result.status === 'pending_cloud_finish') {
         setCollectionError(`本地采集已结束，云端 finish 待重试：${result.detail || ''}`)
-      } else if (result.status === 'failed') {
-        setCollectionError(`采集进程已异常退出，已释放任务：${result.local_stop_error || result.run?.status || ''}`)
+        return
+      }
+      if (result.status === 'failed' && result.run) {
+        setCollectionError(`采集进程已异常退出，已释放任务：${result.local_stop_error || result.run.status || ''}`)
+        return
+      }
+      if (result.status === 'failed') {
+        setCollectionNotice(`本地错误已清理${result.local_stop_error ? `：${result.local_stop_error}` : ''}`)
+        return
+      }
+      if (result.status === 'idle') {
+        setCollectionNotice('当前没有进行中的采集')
       }
     })
   }
@@ -551,6 +527,7 @@ export default function ControlPage() {
   async function startCollectionRun(assignment: Assignment) {
     await runCollectionAction(async () => {
       await collectionApi.startRun(assignment.id)
+      setSelectedAssignmentId(assignment.id)
     })
   }
 
@@ -560,11 +537,21 @@ export default function ControlPage() {
     })
   }
 
+  function handleDateChange(value: string) {
+    setAutoToday(value === serverToday)
+    setTargetDate(value)
+  }
+
   return (
     <div className="page-enter flex h-full flex-col overflow-y-auto">
       {collectionError && (
         <div className="border-b border-rd/30 border-l-4 border-l-rd bg-rd/10 px-4 py-2 text-sm font-medium text-rd">
           {collectionError}
+        </div>
+      )}
+      {collectionNotice && (
+        <div className="border-b border-ac/30 border-l-4 border-l-ac bg-ac/10 px-4 py-2 text-sm font-medium text-ac">
+          {collectionNotice}
         </div>
       )}
 
@@ -590,9 +577,12 @@ export default function ControlPage() {
           collectionStatus={collectionStatus}
           assignments={assignments}
           targetDate={targetDate}
+          serverToday={serverToday}
+          selectedAssignmentId={selectedAssignmentId}
           session={session}
           loading={collectionLoading || Boolean(loading)}
-          onDateChange={setTargetDate}
+          onDateChange={handleDateChange}
+          onSelect={setSelectedAssignmentId}
           onStart={(assignment) => { void startCollectionRun(assignment) }}
           onStop={() => { void stopCollectionRun() }}
           onSave={() => { void runCollectionAction(doSaveEpisode) }}
@@ -600,24 +590,6 @@ export default function ControlPage() {
           onSkipReset={() => { void runCollectionAction(doSkipReset) }}
           onRetryPending={() => { void retryPendingFinish() }}
         />
-
-        {isAdmin && (
-          <AdminDebugPanel
-            state={session.state}
-            loading={loading}
-            hwStatus={hwStatus}
-            onRecordStart={handleAdminRecordStart}
-            onRecordStop={() => { void doRecordStop() }}
-            onInferStart={(params) => {
-              void doInferStart({
-                checkpoint_path: params.checkpointPath,
-                num_episodes: params.numEpisodes,
-                episode_time_s: params.episodeTime,
-              })
-            }}
-            onInferStop={() => { void doInferStop() }}
-          />
-        )}
       </div>
     </div>
   )

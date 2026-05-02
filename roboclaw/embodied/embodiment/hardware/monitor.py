@@ -20,7 +20,7 @@ from loguru import logger
 
 from roboclaw.embodied.board.channels import CH_FAULT_DETECTED, CH_FAULT_RESOLVED
 from roboclaw.embodied.calibration.store import CalibrationStore
-from roboclaw.embodied.embodiment.interface.video import VideoInterface
+from roboclaw.embodied.embodiment.interface.video import VideoInterface, camera_port_requires_rebind
 from roboclaw.embodied.embodiment.manifest.binding import ArmBinding, CameraBinding
 
 _CHECK_INTERVAL_SECONDS = 5
@@ -74,9 +74,13 @@ class CameraStatus:
     connected: bool
     width: int
     height: int
+    message: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        if not self.message:
+            data.pop("message")
+        return data
 
 
 _calibration_store = CalibrationStore()
@@ -112,8 +116,19 @@ def check_camera_status(
     scanned_cameras: list[VideoInterface] | None = None,
 ) -> CameraStatus:
     """Check a single camera's connectivity."""
+    from roboclaw.embodied.embodiment.interface.video import (
+        camera_rebind_message,
+    )
     from roboclaw.embodied.embodiment.hardware.scan import resolve_camera_interface
 
+    if camera_port_requires_rebind(cam.port):
+        return CameraStatus(
+            alias=cam.alias,
+            connected=False,
+            width=cam.interface.width,
+            height=cam.interface.height,
+            message=camera_rebind_message(cam.alias, cam.port),
+        )
     resolved = cam.interface
     if scanned_cameras is not None:
         resolved = resolve_camera_interface(cam.port, scanned_cameras)
@@ -298,7 +313,7 @@ def _check_cameras(
     if recording_active:
         return
     scanned_cameras: list[VideoInterface] = []
-    if cameras:
+    if any(cam.port and not camera_port_requires_rebind(cam.port) for cam in cameras):
         from roboclaw.embodied.embodiment.hardware.scan import scan_cameras
 
         scanned_cameras = scan_cameras()
@@ -308,6 +323,6 @@ def _check_cameras(
             faults.append(HardwareFault(
                 fault_type=FaultType.CAMERA_DISCONNECTED,
                 device_alias=status.alias,
-                message=f"Camera '{status.alias}' device not found",
+                message=status.message or f"Camera '{status.alias}' device not found",
                 timestamp=now,
             ))

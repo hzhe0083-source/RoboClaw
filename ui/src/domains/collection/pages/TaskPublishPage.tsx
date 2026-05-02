@@ -6,21 +6,9 @@ import {
   type CollectionTask,
   type TaskPayload,
 } from '@/domains/collection/api/collectionApi'
+import { assignmentProgressPct, formatHours, todayIso } from '@/domains/collection/lib/metrics'
 import { useAuthStore } from '@/shared/lib/authStore'
 import { ActionButton } from '@/shared/ui'
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function secondsToHours(seconds: number) {
-  return (seconds / 3600).toFixed(1)
-}
-
-function progressPct(item: Assignment) {
-  if (item.target_seconds <= 0) return 0
-  return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
-}
 
 function normalizePhoneRows(rows: string[]) {
   return Array.from(new Set(rows.map((item) => item.trim()).filter(Boolean)))
@@ -42,7 +30,7 @@ const emptyTask: TaskPayload = {
   is_active: true,
 }
 
-export default function CollectionAdminPage() {
+export default function TaskPublishPage() {
   const { user, isLoggedIn, isChecking } = useAuthStore()
   const [view, setView] = useState<'publish' | 'progress'>('publish')
   const [tasks, setTasks] = useState<CollectionTask[]>([])
@@ -163,14 +151,14 @@ export default function CollectionAdminPage() {
   }
 
   if (!isLoggedIn || user?.level !== 'admin') {
-    return <Navigate to="/control" replace />
+    return <Navigate to="/collection/control" replace />
   }
 
   return (
     <div className="collection-page">
       <div className="collection-toolbar">
         <div>
-          <div className="eyebrow">Admin</div>
+          <div className="eyebrow">Collection</div>
           <h2 className="collection-title">任务发布</h2>
         </div>
         <div className="collection-toolbar__actions">
@@ -210,7 +198,7 @@ export default function CollectionAdminPage() {
       {error && <div className="collection-error">{error}</div>}
 
       {view === 'publish' && (
-        <div className="collection-admin-layout">
+        <div className="collection-publish-layout">
           <form className="collection-panel" onSubmit={createTask}>
             <h3>创建任务</h3>
             <label>
@@ -303,11 +291,11 @@ export default function CollectionAdminPage() {
       <section className="collection-panel collection-panel--wide">
         <div className="collection-panel__head">
           <h3>{allDates ? '全部进度' : `${targetDate} 进度`}</h3>
-          <span>{progress.length} 个分配 · {secondsToHours(totalCompletedSeconds)} / {secondsToHours(totalTargetSeconds)} h</span>
+          <span>{progress.length} 个分配 · {formatHours(totalCompletedSeconds)} / {formatHours(totalTargetSeconds)}</span>
         </div>
         <div className="collection-progress-list">
           {progress.map((item) => {
-            const pct = progressPct(item)
+            const pct = assignmentProgressPct(item)
             return (
               <div className="collection-progress-row" key={item.id}>
                 <div>
@@ -316,7 +304,7 @@ export default function CollectionAdminPage() {
                 </div>
                 <div className="collection-progress-row__bar"><span style={{ width: `${pct}%` }} /></div>
                 <div className="collection-progress-row__value">
-                  {secondsToHours(item.completed_seconds)} / {secondsToHours(item.target_seconds)} h
+                  {formatHours(item.completed_seconds)} / {formatHours(item.target_seconds)}
                 </div>
               </div>
             )

@@ -21,7 +21,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
       <path d="M3 18h.01" />
     </svg>
   ),
-  '/collection/admin': (
+  '/collection/publish': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <path d="M14 2v6h6" />
@@ -29,7 +29,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
       <path d="M8 17h5" />
     </svg>
   ),
-  '/control': (
+  '/collection/control': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
@@ -52,7 +52,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
       <path d="M17 6h3v3" />
     </svg>
   ),
-  '/recovery': (
+  '/collection/recovery': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
       <path d="M21 3v6h-6" />
@@ -102,9 +102,7 @@ export default function AppShell() {
   const [chatOpen, setChatOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [collectionExpanded, setCollectionExpanded] = useState(
-    location.pathname.startsWith('/collection')
-    || location.pathname.startsWith('/control')
-    || location.pathname.startsWith('/recovery'),
+    location.pathname.startsWith('/collection'),
   )
   const [pipelineExpanded, setPipelineExpanded] = useState(location.pathname.startsWith('/curation'))
 
@@ -120,8 +118,6 @@ export default function AppShell() {
   useEffect(() => {
     if (
       location.pathname.startsWith('/collection')
-      || location.pathname.startsWith('/control')
-      || location.pathname.startsWith('/recovery')
     ) {
       setCollectionExpanded(true)
     }
@@ -137,14 +133,11 @@ export default function AppShell() {
     { path: '/logs', label: t('logs') },
   ]
   const collectionChildren = [
-    ...(user?.level === 'admin' ? [{ path: '/collection/admin', label: '任务发布' }] : []),
-    { path: '/control', label: '控制平台' },
-    { path: '/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
+    ...(user?.level === 'admin' ? [{ path: '/collection/publish', label: '任务发布' }] : []),
+    { path: '/collection/control', label: '控制平台' },
+    { path: '/collection/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
   ]
-  const collectionActive =
-    location.pathname.startsWith('/collection')
-    || location.pathname.startsWith('/control')
-    || location.pathname.startsWith('/recovery')
+  const collectionActive = location.pathname.startsWith('/collection')
   const pipelineChildren = [
     { path: '/curation/datasets', label: t('datasetReader') },
     { path: '/curation/quality', label: t('qualityWorkbench') },
@@ -204,7 +197,7 @@ export default function AppShell() {
         <nav className="app-sidebar__nav">
           {sidebarCollapsed ? (
             <Link
-              to="/control"
+              to="/collection/control"
               className={cn('app-sidebar__link', collectionActive && 'app-sidebar__link--active')}
               title="采集中心"
             >

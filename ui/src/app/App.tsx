@@ -2,8 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import AppShell from '@/app/shell/AppShell'
 import ControlPage from '@/domains/control/pages/ControlPage'
-import CollectionPage from '@/domains/collection/pages/CollectionPage'
-import CollectionAdminPage from '@/domains/collection/pages/CollectionAdminPage'
+import TaskPublishPage from '@/domains/collection/pages/TaskPublishPage'
 import RecoveryCenterPage from '@/domains/recovery/pages/RecoveryCenterPage'
 import DatasetExplorerPage from '@/domains/datasets/explorer/pages/DatasetExplorerPage'
 import TrainingCenterPage from '@/domains/training/pages/TrainingCenterPage'
@@ -52,11 +51,11 @@ function App() {
                 {/* 主应用：必须登录后才能访问 */}
                 <Route element={<RequireLogin />}>
                     <Route path="/" element={<AppShell />}>
-                        <Route index element={<Navigate to="/control" replace />} />
-                        <Route path="collection" element={<CollectionPage />} />
-                        <Route path="collection/admin" element={<CollectionAdminPage />} />
-                        <Route path="control" element={<ControlPage />} />
-                        <Route path="recovery" element={<RecoveryCenterPage />} />
+                        <Route index element={<Navigate to="/collection/control" replace />} />
+                        <Route path="collection" element={<Navigate to="/collection/control" replace />} />
+                        <Route path="collection/control" element={<ControlPage />} />
+                        <Route path="collection/publish" element={<TaskPublishPage />} />
+                        <Route path="collection/recovery" element={<RecoveryCenterPage />} />
                         <Route path="datasets" element={<Navigate to="/curation/datasets" replace />} />
                         <Route path="datasets/explorer" element={<Navigate to="/curation/datasets" replace />} />
                         <Route path="training" element={<TrainingCenterPage />} />

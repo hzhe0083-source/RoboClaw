@@ -165,6 +165,14 @@ class TestCheckCameras:
         _check_cameras(cams, time.time(), faults, recording_active=False)
         assert faults == []
 
+    def test_by_id_camera_requires_rebind(self):
+        cams = [self._camera_binding("/dev/v4l/by-id/usb-camera-video-index0")]
+        faults: list[HardwareFault] = []
+        _check_cameras(cams, time.time(), faults, recording_active=False)
+        assert len(faults) == 1
+        assert faults[0].fault_type == FaultType.CAMERA_DISCONNECTED
+        assert "Rebind the camera" in faults[0].message
+
     def test_skip_during_recording(self, tmp_path):
         cams = [self._camera_binding(str(tmp_path / "gone"))]
         faults: list[HardwareFault] = []

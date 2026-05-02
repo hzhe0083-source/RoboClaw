@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from fastapi import FastAPI
 
-from roboclaw.embodied.service import EmbodiedService
+if TYPE_CHECKING:
+    from roboclaw.embodied.service import EmbodiedService
 
 
 def register_all_routes(
