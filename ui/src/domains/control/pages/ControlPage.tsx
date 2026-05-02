@@ -57,13 +57,15 @@ function formatSeconds(seconds: number) {
   return rest ? `${minutes}m ${rest}s` : `${minutes}m`
 }
 
-function sessionHasError(session: SessionStatus) {
+function sessionHasError(session: SessionStatus, collectionStatus: CollectionStatus | null) {
   return session.state === 'error'
     || Boolean(session.error)
+    || collectionStatus?.session.state === 'error'
+    || Boolean(collectionStatus?.session.error)
 }
 
-function sessionErrorText(session: SessionStatus) {
-  return session.error || '本地 session 处于 error 状态'
+function sessionErrorText(session: SessionStatus, collectionStatus: CollectionStatus | null) {
+  return session.error || collectionStatus?.session.error || '本地 session 处于 error 状态'
 }
 
 function HardwareSummary({ hwStatus, busy, state, owner }: {
@@ -210,8 +212,8 @@ function CollectionRunPanel({
   const pct = targetEpisodes > 0 ? Math.min(100, Math.round((session.saved_episodes / targetEpisodes) * 100)) : 0
   const canControlEpisode = session.record_phase === 'recording' && !session.record_pending_command
   const canSkipResetWait = session.record_phase === 'resetting' && !session.record_pending_command
-  const hasError = sessionHasError(session)
-  const errorText = sessionErrorText(session)
+  const hasError = sessionHasError(session, collectionStatus)
+  const errorText = sessionErrorText(session, collectionStatus)
   const busyWithoutActive = session.state !== 'idle'
   const viewingToday = targetDate === serverToday
   const taskSelectionDisabled = loading || hasError || busyWithoutActive
@@ -439,8 +441,8 @@ export default function ControlPage() {
     const [nextAssignments, nextStatus] = await Promise.all([
       collectionApi.getAssignments(targetDate),
       collectionApi.getStatus(),
-      fetchSessionStatus(),
     ])
+    await fetchSessionStatus()
     setAssignments(nextAssignments)
     setCollectionStatus(nextStatus)
   }
