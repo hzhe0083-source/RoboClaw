@@ -340,7 +340,7 @@ def build_workspace_payload(
     episode_index: int,
 ) -> dict[str, Any]:
     """Assemble the full annotation-workspace payload for a single episode."""
-    data = load_episode_data(dataset_path, episode_index, include_videos=False)
+    data = load_episode_data(dataset_path, episode_index, include_videos=True)
     info = data.get("info", {})
     episode_meta = data.get("episode_meta") or {}
     rows = data.get("rows", [])

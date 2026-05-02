@@ -173,10 +173,7 @@ def _load_task_rows(dataset_path: Path) -> list[dict[str, Any]]:
             line = line.strip()
             if not line:
                 continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            payload = json.loads(line)
             if isinstance(payload, dict):
                 rows.append(payload)
         return rows

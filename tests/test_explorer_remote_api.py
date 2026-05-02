@@ -612,6 +612,57 @@ def test_select_rows_for_episode_uses_dataset_row_range_offsets() -> None:
     assert [row["frame_index"] for row in selected] == [2, 3]
 
 
+def test_remote_episode_detail_fetches_viewer_rows_using_episode_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset = "demo/shared-layout"
+    artifacts = {
+        "dataset": dataset,
+        "siblings": [],
+        "info": {
+            "fps": 30,
+            "chunks_size": 1000,
+            "features": {
+                "action": {"names": ["joint_1"]},
+                "observation.state": {"names": ["joint_1"]},
+            },
+        },
+        "stats": {},
+        "episodes_meta": [
+            {
+                "episode_index": 7,
+                "length": 750,
+                "dataset_from_index": 100,
+                "dataset_to_index": 850,
+            }
+        ],
+    }
+    captured: dict[str, object] = {}
+
+    def fake_viewer_rows(
+        _dataset: str,
+        _config: str,
+        _split: str,
+        _episode_index: int,
+        *,
+        length: int | None = None,
+    ) -> list[dict[str, object]]:
+        captured["length"] = length
+        return [
+            {"index": 100, "episode_index": 7, "timestamp": 0.0, "frame_index": 0, "action": [0.1], "observation.state": [0.2]},
+            {"index": 849, "episode_index": 7, "timestamp": 1.0, "frame_index": 749, "action": [0.2], "observation.state": [0.3]},
+        ]
+
+    monkeypatch.setattr(remote_explorer, "get_remote_dataset_artifacts", lambda _dataset: artifacts)
+    monkeypatch.setattr(remote_explorer, "_viewer_get_split", lambda _dataset: ("default", "train"))
+    monkeypatch.setattr(remote_explorer, "_viewer_fetch_episode_rows", fake_viewer_rows)
+
+    payload = remote_explorer.load_remote_episode_detail(dataset, 7)
+
+    assert captured["length"] == 750
+    assert payload["summary"]["row_count"] == 2
+
+
 def test_remote_episode_detail_supports_shared_file_layout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

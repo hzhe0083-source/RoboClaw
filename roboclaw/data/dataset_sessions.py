@@ -48,6 +48,21 @@ def _ensure_dir(path: Path) -> Path:
     return path
 
 
+def _ensure_child_path(root: Path, target: Path) -> Path:
+    resolved_root = root.resolve()
+    resolved_target = target.resolve()
+    resolved_target.relative_to(resolved_root)
+    return resolved_target
+
+
+def _path_is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def make_session_handle(kind: SessionKind, session_id: str) -> str:
     return f"{SESSION_PREFIX}:{kind}:{session_id}"
 
@@ -124,11 +139,8 @@ def _build_dataset_summary_from_dir(
             line = line.strip()
             if not line:
                 continue
-            try:
-                entry = json.loads(line)
-                episode_lengths.append(int(entry.get("length", 0) or 0))
-            except Exception:
-                episode_lengths.append(0)
+            entry = json.loads(line)
+            episode_lengths.append(int(entry.get("length", 0) or 0))
 
     return {
         "name": handle,
@@ -199,20 +211,25 @@ def register_remote_dataset_session(
 
 def create_uploaded_directory_session(
     *,
-    files: list[tuple[str, bytes]],
+    files: list[tuple[str, bytes | Path]],
     display_name: str | None = None,
 ) -> dict[str, Any]:
     session_id = uuid4().hex[:12]
     handle = make_session_handle("local_directory", session_id)
     dataset_dir = _dataset_dir("local_directory", session_id)
     _ensure_dir(dataset_dir)
+    dataset_root = dataset_dir.resolve()
 
     for relative_path, raw in files:
-        target = (dataset_dir / relative_path).resolve()
-        if not str(target).startswith(str(dataset_dir.resolve())):
-            raise ValueError(f"Invalid uploaded file path '{relative_path}'")
+        try:
+            target = _ensure_child_path(dataset_root, dataset_root / relative_path)
+        except ValueError as exc:
+            raise ValueError(f"Invalid uploaded file path '{relative_path}'") from exc
         _ensure_dir(target.parent)
-        target.write_bytes(raw)
+        if isinstance(raw, Path):
+            shutil.copyfile(raw, target)
+        else:
+            target.write_bytes(bytes(raw))
 
     session_display_name = display_name or dataset_dir.name
     metadata = {
@@ -256,17 +273,14 @@ def list_session_dataset_summaries(*, include_remote: bool = True, include_local
                 continue
             session_id = session_dir.name
             handle = make_session_handle(kind, session_id)
-            try:
-                metadata = read_session_metadata(handle)
-                summary = _build_dataset_summary_from_dir(
-                    dataset_dir=_dataset_dir(kind, session_id),
-                    handle=handle,
-                    display_name=str(metadata.get("display_name") or handle),
-                    source_kind="remote_session" if kind == "remote" else "local_directory_session",
-                    source_dataset=str(metadata.get("source_dataset") or metadata.get("display_name") or handle),
-                )
-            except Exception:
-                continue
+            metadata = read_session_metadata(handle)
+            summary = _build_dataset_summary_from_dir(
+                dataset_dir=_dataset_dir(kind, session_id),
+                handle=handle,
+                display_name=str(metadata.get("display_name") or handle),
+                source_kind="remote_session" if kind == "remote" else "local_directory_session",
+                source_dataset=str(metadata.get("source_dataset") or metadata.get("display_name") or handle),
+            )
             results.append(summary)
     return results
 
@@ -374,12 +388,12 @@ def resolve_dataset_handle_or_workspace(name: str) -> Path:
 
     root = _datasets_root().resolve()
     candidate = (root / name).resolve()
-    if candidate.is_dir() and str(candidate).startswith(str(root) + "/"):
+    if candidate.is_dir() and _path_is_relative_to(candidate, root):
         return candidate
 
     for parent in root.iterdir() if root.exists() else []:
         nested = (parent / name).resolve()
-        if parent.is_dir() and nested.is_dir() and str(nested).startswith(str(root) + "/"):
+        if parent.is_dir() and nested.is_dir() and _path_is_relative_to(nested, root):
             return nested
 
     raise FileNotFoundError(f"Dataset '{name}' not found")

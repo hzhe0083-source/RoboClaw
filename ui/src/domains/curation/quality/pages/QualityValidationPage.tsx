@@ -131,25 +131,25 @@ export default function QualityValidationView() {
   const issuePieSegments = useMemo<PieSegment[]>(
     () =>
       clampPieSegments(
-        issueDistribution(episodes).map((item, index) => ({
+        issueDistribution(filteredEpisodes).map((item, index) => ({
           label: formatIssueLabel(item.label, locale),
           count: item.count,
           color: ['#4d87ff', '#7c68ff', '#f59e0b', '#ec4899', '#14b8a6'][index % 5],
         })),
         { maxSegments: 4, otherLabel, otherColor: '#94a3b8' },
       ),
-    [episodes, locale, otherLabel],
+    [filteredEpisodes, locale, otherLabel],
   )
   const scorePieSegments = useMemo<PieSegment[]>(
     () =>
-      scoreHistogram(episodes)
+      scoreHistogram(filteredEpisodes)
         .map((item, index) => ({
           label: item.label,
           count: item.count,
           color: ['#1d4ed8', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe'][index % 5],
         }))
         .filter((segment) => segment.count > 0),
-    [episodes],
+    [filteredEpisodes],
   )
 
   async function handlePublishParquet(): Promise<void> {

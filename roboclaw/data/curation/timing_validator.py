@@ -37,16 +37,6 @@ def validate_timing(
     return finalize_validator(operator_name, issues, details={"frame_count": len(timestamps)})
 
 
-def _extract_timestamps(rows: list[dict[str, Any]]) -> list[float]:
-    raw = [
-        safe_float(
-            row["timestamp"] if "timestamp" in row else row.get("timestamp_utc"),
-        )
-        for row in rows
-    ]
-    return [v for v in raw if v is not None]
-
-
 def _check_monotonicity(
     issues: list[dict[str, Any]],
     operator_name: str,

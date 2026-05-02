@@ -44,6 +44,7 @@ export default function PrototypePanel({ compact = false }: { compact?: boolean 
     prototypeResults,
     workflowState,
     alignmentSourceMode,
+    datasetInfo,
   } = useWorkflow()
 
   const pStage = workflowState?.stages.prototype_discovery
@@ -51,6 +52,8 @@ export default function PrototypePanel({ compact = false }: { compact?: boolean 
   const isRunning = prototypeRunning || pStage?.status === 'running'
   const qualityDone = qStage?.status === 'completed'
   const requiresQuality = alignmentSourceMode === 'quality'
+  const rawCandidateCount = datasetInfo?.stats.total_episodes ?? 0
+  const rawCandidatesReady = alignmentSourceMode !== 'raw' || (Boolean(datasetInfo) && rawCandidateCount > 0)
   const runningSummary = isRunning && pStage?.summary ? pStage.summary : null
   const displayCandidateCount =
     typeof runningSummary?.candidate_count === 'number'
@@ -92,13 +95,16 @@ export default function PrototypePanel({ compact = false }: { compact?: boolean 
           type="button"
           className="prototype-panel__run-btn"
           onClick={() => runPrototypeDiscovery()}
-          disabled={isRunning || (requiresQuality && !qualityDone)}
+          disabled={isRunning || (requiresQuality && !qualityDone) || !rawCandidatesReady}
         >
           {isRunning ? t('running') : t('runPrototype')}
         </button>
 
         {requiresQuality && !qualityDone && (
           <p className="prototype-panel__hint">{t('qualityNotDone')}</p>
+        )}
+        {!rawCandidatesReady && (
+          <p className="prototype-panel__hint">{t('rawDataEpisodes')}: 0</p>
         )}
       </div>
 

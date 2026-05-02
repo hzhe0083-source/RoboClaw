@@ -65,7 +65,7 @@ def _build_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Test
         *,
         include_videos: bool = True,
     ) -> dict[str, object]:
-        assert include_videos is False
+        assert include_videos is True
         return {
             "info": info,
             "episode_meta": {"episode_index": 0, "length": 1.0, "task": "pick"},

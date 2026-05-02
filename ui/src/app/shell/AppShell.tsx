@@ -94,7 +94,7 @@ interface NavItem {
 
 export default function AppShell() {
   const location = useLocation()
-  const { connect, disconnect } = useChatSocket()
+  const { connect, disconnect, connected, messages } = useChatSocket()
   const fetchHardwareStatus = useHardwareStore((state) => state.fetchHardwareStatus)
   const recoveryFaults = useRecoveryStore((state) => state.faults)
   const { t } = useI18n()
@@ -104,6 +104,7 @@ export default function AppShell() {
     location.pathname.startsWith('/collection'),
   )
   const [pipelineExpanded, setPipelineExpanded] = useState(location.pathname.startsWith('/curation'))
+  const [chatWidgetVisible, setChatWidgetVisible] = useState(true)
 
   useEffect(() => {
     connect()
@@ -359,7 +360,24 @@ export default function AppShell() {
         </main>
 
         <div className="chat-widget">
-          <ChatPanel variant="widget" />
+          {chatWidgetVisible ? (
+            <ChatPanel variant="widget" onClose={() => setChatWidgetVisible(false)} />
+          ) : (
+            <button
+              type="button"
+              className="chat-widget__trigger"
+              onClick={() => setChatWidgetVisible(true)}
+              aria-label="Open RoboClaw AI chat"
+            >
+              <span className={cn('chat-widget__dot', connected && 'chat-widget__dot--live')} aria-hidden="true" />
+              <span className="chat-widget__label">AI</span>
+              {messages.length > 0 && (
+                <span className="chat-widget__count" aria-label={`${messages.length} chat messages`}>
+                  {messages.length}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         <ToastContainer />

@@ -45,9 +45,9 @@ def validate_trajectory_dtw(
     issue = make_issue(
         operator_name=operator_name,
         check_name="requires_batch_context",
-        passed=False,
+        passed=True,
         message="trajectory_dtw runs after batch quality validation",
-        level="major",
+        level="info",
         value={"skipped": True, "reason": "requires_batch_context"},
     )
     return finalize_validator(

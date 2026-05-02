@@ -309,7 +309,7 @@ def test_annotation_workspace_uses_shared_video_clip_bounds(
         *,
         include_videos: bool = True,
     ) -> dict[str, object]:
-        assert include_videos is False
+        assert include_videos is True
         return {
             "info": info,
             "episode_meta": episode_meta,

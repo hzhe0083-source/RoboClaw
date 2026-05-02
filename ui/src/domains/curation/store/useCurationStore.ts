@@ -152,7 +152,13 @@ export const useWorkflow = create<WorkflowStore>((set, get) => ({
       await get().refreshState()
       set({ selectedDatasetIsRemotePrepared: true })
     } catch {
-      set({ workflowState: null, selectedDatasetIsRemotePrepared: false })
+      get().stopPolling()
+      set({
+        workflowState: null,
+        selectedDatasetIsRemotePrepared: false,
+        qualityRunning: false,
+        prototypeRunning: false,
+      })
     }
   },
 
@@ -277,16 +283,21 @@ export const useWorkflow = create<WorkflowStore>((set, get) => ({
     const { selectedDataset, selectedValidators, qualityThresholds } = get()
     if (!selectedDataset) return
     set({ qualityRunning: true })
-    await fetchJson('/api/curation/quality-run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dataset: selectedDataset,
-        selected_validators: selectedValidators,
-        threshold_overrides: qualityThresholds,
-      }),
-    })
-    get().startPolling()
+    try {
+      await fetchJson('/api/curation/quality-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataset: selectedDataset,
+          selected_validators: selectedValidators,
+          threshold_overrides: qualityThresholds,
+        }),
+      })
+      get().startPolling()
+    } catch (error) {
+      set({ qualityRunning: false })
+      throw error
+    }
   },
 
   pauseQualityValidation: async () => {
@@ -309,22 +320,30 @@ export const useWorkflow = create<WorkflowStore>((set, get) => ({
       throw new Error('No dataset selected')
     }
     set({ qualityRunning: true })
-    await fetchJson('/api/curation/quality-resume', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dataset: selectedDataset,
-        selected_validators: selectedValidators,
-        threshold_overrides: qualityThresholds,
-      }),
-    })
-    get().startPolling()
+    try {
+      await fetchJson('/api/curation/quality-resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataset: selectedDataset,
+          selected_validators: selectedValidators,
+          threshold_overrides: qualityThresholds,
+        }),
+      })
+      get().startPolling()
+    } catch (error) {
+      set({ qualityRunning: false })
+      throw error
+    }
   },
 
   runPrototypeDiscovery: async (clusterCount?: number) => {
     const { selectedDataset, datasetInfo, qualityResults, alignmentSourceMode, alignmentQualityFilter } = get()
     if (!selectedDataset) return
     const qualityMode = alignmentSourceMode === 'raw' ? 'raw' : alignmentQualityFilter
+    if (alignmentSourceMode === 'raw' && (datasetInfo?.stats.total_episodes ?? 0) <= 0) {
+      throw new Error('Dataset metadata is not ready for raw prototype discovery')
+    }
     const selectedEpisodeIndices =
       alignmentSourceMode === 'raw'
         ? Array.from({ length: datasetInfo?.stats.total_episodes ?? 0 }, (_, index) => index)

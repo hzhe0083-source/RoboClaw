@@ -55,7 +55,7 @@ def test_prototype_run_passes_selected_episode_indices_and_filter_mode(
     assert captured["quality_filter_mode"] == "all"
 
 
-def test_prototype_run_uses_all_candidates_by_default(
+def test_prototype_run_caps_candidates_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -86,7 +86,7 @@ def test_prototype_run_uses_all_candidates_by_default(
     )
 
     assert response.status_code == 200
-    assert captured["candidate_limit"] is None
+    assert captured["candidate_limit"] == curation_routes.DEFAULT_PROTOTYPE_CANDIDATE_LIMIT
 
 
 def test_prototype_run_keeps_explicit_large_candidate_limit(

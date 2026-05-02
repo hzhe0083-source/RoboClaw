@@ -155,6 +155,8 @@ def _sample_frame_indexes(
     sample_count = _video_sample_count(max_samples, fps, frame_count, clip_start_s, clip_end_s)
     if sample_count <= 0:
         return []
+    if frame_count <= 0:
+        return list(range(sample_count))
     start_frame, end_frame = _clip_frame_bounds(fps, frame_count, clip_start_s, clip_end_s)
     available = end_frame - start_frame
     if available <= sample_count:

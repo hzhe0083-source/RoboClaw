@@ -104,17 +104,30 @@ def _allocate_cluster_counts(
 ) -> dict[str, int | None]:
     if requested_count is None:
         return {group["bucket_key"]: None for group in groups}
-    budget = min(max(int(requested_count), len(groups)), sum(len(group["entries"]) for group in groups))
-    counts = {group["bucket_key"]: 1 for group in groups}
-    remaining = budget - len(groups)
+    valid_counts = {
+        group["bucket_key"]: sum(1 for entry in group["entries"] if entry.get("sequence"))
+        for group in groups
+    }
+    valid_groups = [group for group in groups if valid_counts[group["bucket_key"]] > 0]
+    if not valid_groups:
+        return {}
+    budget = min(
+        max(int(requested_count), len(valid_groups)),
+        sum(valid_counts[group["bucket_key"]] for group in valid_groups),
+    )
+    counts = {group["bucket_key"]: 1 for group in valid_groups}
+    remaining = budget - len(valid_groups)
     while remaining > 0:
         expandable = [
-            group for group in groups
-            if counts[group["bucket_key"]] < len(group["entries"])
+            group for group in valid_groups
+            if counts[group["bucket_key"]] < valid_counts[group["bucket_key"]]
         ]
         if not expandable:
             break
-        target = max(expandable, key=lambda group: len(group["entries"]) / counts[group["bucket_key"]])
+        target = max(
+            expandable,
+            key=lambda group: valid_counts[group["bucket_key"]] / counts[group["bucket_key"]],
+        )
         counts[target["bucket_key"]] += 1
         remaining -= 1
     return counts

@@ -32,7 +32,6 @@ def load_episode_data(
     """Load episode parquet data, metadata, and optionally video paths from LeRobot directory."""
     info = _load_info_json(dataset_path)
     episodes_meta = _load_episode_meta(dataset_path, episode_index)
-    chunk = _resolve_chunk(info, episode_index)
     parquet_relative_path = _resolve_data_relative_path(info, episodes_meta, episode_index)
     parquet_path = dataset_path / parquet_relative_path
     remote_cache_root = _remote_cache_root(dataset_path)
@@ -47,11 +46,16 @@ def load_episode_data(
         )
         rows = _read_episode_parquet_rows(parquet_path, episodes_meta, episode_index)
 
-    video_dir = dataset_path / "videos" / f"chunk-{chunk}" / f"episode_{episode_index:06d}"
+    chunk = _resolve_chunk(info, episode_index)
+    fallback_video_dir = dataset_path / "videos" / f"chunk-{chunk}" / f"episode_{episode_index:06d}"
+    local_video_files = _existing_local_video_files(dataset_path, info, episodes_meta, episode_index)
+    video_dir = local_video_files[0].parent if local_video_files else fallback_video_dir
     video_files: list[Path] = []
     if include_videos:
-        if video_dir.exists():
-            video_files = _list_video_files(video_dir)
+        if local_video_files:
+            video_files = local_video_files
+        elif fallback_video_dir.exists():
+            video_files = _list_video_files(fallback_video_dir)
         else:
             remote_dataset_id = _resolve_remote_dataset_id(dataset_path, info)
             video_files = _download_remote_videos(
@@ -249,6 +253,24 @@ def resolve_video_relative_paths(
         if relative_path is not None:
             paths.append(relative_path)
     return paths
+
+
+def _existing_local_video_files(
+    dataset_path: Path,
+    info: dict[str, Any],
+    episode_meta: dict[str, Any],
+    episode_index: int,
+) -> list[Path]:
+    files: list[Path] = []
+    for relative_path in resolve_video_relative_paths(info, episode_meta, episode_index):
+        candidate = (dataset_path / relative_path).resolve()
+        try:
+            candidate.relative_to(dataset_path.resolve())
+        except ValueError as exc:
+            raise ValueError(f"Video path escapes dataset root: {relative_path}") from exc
+        if candidate.is_file():
+            files.append(candidate)
+    return files
 
 
 def _resolve_video_relative_path(

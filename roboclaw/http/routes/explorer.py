@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar
 from urllib.parse import quote
 
@@ -57,6 +57,26 @@ class ExplorerPrepareRequest(BaseModel):
 
 
 T = TypeVar("T")
+
+
+def _resolve_child_path(root: Path, relative_path: str) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = (resolved_root / relative_path).resolve()
+    resolved_path.relative_to(resolved_root)
+    return resolved_path
+
+
+def _validate_uploaded_relative_path(relative_path: str) -> str:
+    normalized = relative_path.replace("\\", "/").strip()
+    path = PurePosixPath(normalized)
+    if (
+        not normalized
+        or path.is_absolute()
+        or (bool(path.parts) and path.parts[0].endswith(":"))
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise HTTPException(status_code=400, detail=f"Invalid uploaded file path '{relative_path}'")
+    return path.as_posix()
 
 
 def _remote_dataset_not_accessible_detail(dataset_name: str) -> str:
@@ -497,12 +517,15 @@ def register_explorer_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=400, detail="files and relative_paths length mismatch")
         file_payloads: list[tuple[str, bytes]] = []
         for upload, relative_path in zip(files, relative_paths):
-            file_payloads.append((relative_path, await upload.read()))
-        payload = await asyncio.to_thread(
-            create_uploaded_directory_session,
-            files=file_payloads,
-            display_name=display_name,
-        )
+            file_payloads.append((_validate_uploaded_relative_path(relative_path), await upload.read()))
+        try:
+            payload = await asyncio.to_thread(
+                create_uploaded_directory_session,
+                files=file_payloads,
+                display_name=display_name,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         logger.info("Explorer created local directory session '{}'", payload["dataset_name"])
         return payload
 
@@ -523,9 +546,10 @@ def register_explorer_routes(app: FastAPI) -> None:
                     detail="Local explorer video requests require a dataset name",
                 )
             root = resolve_local_dataset_path(dataset)
-        video_path = (root / path).resolve()
-        if not str(video_path).startswith(str(root.resolve())):
-            raise HTTPException(status_code=403, detail="Path traversal not allowed")
+        try:
+            video_path = _resolve_child_path(root, path)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail="Path traversal not allowed") from exc
         if not video_path.is_file():
             raise HTTPException(status_code=404, detail=f"Video file '{video_path}' not found")
         return FileResponse(str(video_path), media_type="video/mp4", filename=video_path.name)

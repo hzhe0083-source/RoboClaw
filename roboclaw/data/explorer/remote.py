@@ -605,20 +605,34 @@ def _viewer_fetch_episode_rows(
     config: str,
     split: str,
     episode_index: int,
-    length: int = 500,
+    length: int | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch rows for a single episode via the Viewer /filter endpoint."""
     where = f'"episode_index"={episode_index}'
-    url = (
-        f"{_HF_VIEWER_BASE}/filter"
-        f"?dataset={quote(dataset, safe='')}"
-        f"&config={quote(config, safe='')}"
-        f"&split={quote(split, safe='')}"
-        f"&where={quote(where, safe='')}"
-        f"&offset=0&length={length}"
-    )
-    payload = _viewer_fetch_json(url)
-    return [entry.get("row", {}) for entry in payload.get("rows", [])]
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    page_size = 500
+    while length is None or len(rows) < length:
+        current_length = page_size if length is None else min(page_size, length - len(rows))
+        if current_length <= 0:
+            break
+        url = (
+            f"{_HF_VIEWER_BASE}/filter"
+            f"?dataset={quote(dataset, safe='')}"
+            f"&config={quote(config, safe='')}"
+            f"&split={quote(split, safe='')}"
+            f"&where={quote(where, safe='')}"
+            f"&offset={offset}&length={current_length}"
+        )
+        payload = _viewer_fetch_json(url)
+        batch = [entry.get("row", {}) for entry in payload.get("rows", [])]
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < current_length:
+            break
+        offset += len(batch)
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -840,6 +854,22 @@ def _select_rows_for_episode(
     return rows
 
 
+def _episode_fetch_length(episode_meta: dict[str, Any] | None) -> int | None:
+    if not episode_meta:
+        return None
+
+    start = _safe_int(episode_meta.get("dataset_from_index"))
+    stop = _safe_int(episode_meta.get("dataset_to_index"))
+    if start is not None and stop is not None and stop > start:
+        return stop - start
+
+    length = _safe_int(episode_meta.get("length"))
+    if length is not None and length > 0:
+        return length
+
+    return None
+
+
 def load_remote_episode_detail(
     dataset: str,
     episode_index: int,
@@ -858,7 +888,13 @@ def load_remote_episode_detail(
     # Try the Viewer API first (zero-download)
     try:
         config, split = _viewer_get_split(dataset)
-        rows = _viewer_fetch_episode_rows(dataset, config, split, episode_index)
+        rows = _viewer_fetch_episode_rows(
+            dataset,
+            config,
+            split,
+            episode_index,
+            length=_episode_fetch_length(episode_meta),
+        )
         if rows:
             logger.info("Viewer API returned {} rows for {}#{}", len(rows), dataset, episode_index)
             return _build_episode_payload(rows, info, episode_index, videos)

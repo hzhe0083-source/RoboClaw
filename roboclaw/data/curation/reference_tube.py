@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import statistics
 from dataclasses import dataclass
@@ -98,7 +99,8 @@ class ReferenceTubeBuilder:
             )
         anchor_key = str(anchor.get("record_key", ""))
         entry_key = str(entry.get("record_key", ""))
-        cache_key = f"{anchor_key}\x1f{entry_key}"
+        config_key = json.dumps(self._dtw_config or {}, sort_keys=True, default=str)
+        cache_key = f"{anchor_key}\x1f{entry_key}\x1f{config_key}"
         cached = self._alignment_cache.get(cache_key)
         if cached is not None:
             cached_anchor_key, aligned, aligned_velocity = cached

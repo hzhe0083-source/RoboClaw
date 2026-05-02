@@ -341,10 +341,21 @@ export default function ChatPanel({
             type="button"
             className="chat-widget__minimize"
             onClick={() => setWidgetCollapsed(true)}
-            aria-label="Close RoboClaw AI chat"
+            aria-label="Minimize RoboClaw AI chat"
+            style={onClose ? { right: 46 } : undefined}
           >
-            <span aria-hidden="true">×</span>
+            <span aria-hidden="true">-</span>
           </button>
+          {onClose && (
+            <button
+              type="button"
+              className="chat-widget__minimize"
+              onClick={onClose}
+              aria-label="Dismiss RoboClaw AI chat"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          )}
 
           <div ref={conversationRef} className="chat-widget__conversation" aria-live="polite">
             {!providerConfigured ? (

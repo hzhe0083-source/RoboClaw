@@ -21,5 +21,9 @@ def test_uploaded_directory_session_rejects_path_escape(
 
     with pytest.raises(ValueError, match="Invalid uploaded file path"):
         dataset_sessions.create_uploaded_directory_session(files=[("../escape.txt", b"x")])
+    with pytest.raises(ValueError, match="Invalid uploaded file path"):
+        dataset_sessions.create_uploaded_directory_session(files=[("../dataset2/escape.txt", b"x")])
 
     assert not (tmp_path / "cache" / "escape.txt").exists()
+    local_sessions = tmp_path / "cache" / "dataset-sessions" / "local_directory"
+    assert not list(local_sessions.glob("*/dataset2/escape.txt"))

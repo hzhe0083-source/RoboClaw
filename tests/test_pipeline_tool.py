@@ -69,7 +69,7 @@ def test_pipeline_tool_prepare_remote_dataset_emits_frontend_event(monkeypatch) 
             )
         )
     )
-    message = asyncio.run(bus.consume_outbound())
+    message = asyncio.run(asyncio.wait_for(bus.consume_outbound(), timeout=1.0))
 
     assert result["dataset_name"] == "session:remote:thanos"
     assert result["event_sent"] is True
@@ -170,7 +170,7 @@ def test_pipeline_tool_run_quality_emits_frontend_event(monkeypatch, tmp_path) -
             )
         )
     )
-    message = asyncio.run(bus.consume_outbound())
+    message = asyncio.run(asyncio.wait_for(bus.consume_outbound(), timeout=1.0))
 
     assert result["status"] == "started"
     assert result["event_sent"] is True

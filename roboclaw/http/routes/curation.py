@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
+from huggingface_hub.errors import HFValidationError, HfHubHTTPError, RepositoryNotFoundError
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -43,6 +45,7 @@ from roboclaw.data.datasets import (
 # Module-level service singleton
 _service = CurationService()
 _catalog = DatasetCatalog(root_resolver=lambda: datasets_root())
+DEFAULT_PROTOTYPE_CANDIDATE_LIMIT = 200
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +63,7 @@ class QualityRunRequest(BaseModel):
 class PrototypeRunRequest(BaseModel):
     dataset: str
     cluster_count: int | None = None
-    candidate_limit: int | None = Field(default=None, ge=1)
+    candidate_limit: int | None = Field(default=DEFAULT_PROTOTYPE_CANDIDATE_LIMIT, ge=1)
     episode_indices: list[int] | None = None
     quality_filter_mode: str = "passed"
 
@@ -225,6 +228,21 @@ def _ensure_dataset_workspace(dataset_id: str) -> Path:
     return resolved
 
 
+def _resolve_child_path(root: Path, relative_path: str | Path) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = (resolved_root / relative_path).resolve()
+    resolved_path.relative_to(resolved_root)
+    return resolved_path
+
+
+def _remote_dataset_error(dataset_id: str, exc: Exception) -> HTTPException:
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if isinstance(exc, (RepositoryNotFoundError, HFValidationError)) or status_code == 404:
+        return HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' not found")
+    return HTTPException(status_code=502, detail=f"Failed to load remote dataset '{dataset_id}'")
+
+
 # ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
@@ -286,8 +304,8 @@ def register_curation_routes(app: FastAPI) -> None:
             return payload
         try:
             dataset = await asyncio.to_thread(_catalog.resolve_remote_dataset, dataset_id)
-        except Exception as exc:
-            raise HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' not found: {exc}") from exc
+        except (RepositoryNotFoundError, HFValidationError, HfHubHTTPError, httpx.HTTPError) as exc:
+            raise _remote_dataset_error(dataset_id, exc) from exc
         return dataset.to_dict()
 
     # -----------------------------------------------------------------------
@@ -405,11 +423,12 @@ def register_curation_routes(app: FastAPI) -> None:
     async def prototype_run(body: PrototypeRunRequest) -> dict[str, str]:
         """Start prototype discovery as a background task."""
         dataset_path = _ensure_dataset_workspace(body.dataset)
+        candidate_limit = body.candidate_limit or DEFAULT_PROTOTYPE_CANDIDATE_LIMIT
         return await _service.start_prototype_run(
             dataset_path,
             body.dataset,
             body.cluster_count,
-            body.candidate_limit,
+            candidate_limit,
             body.episode_indices,
             body.quality_filter_mode,
         )
@@ -496,11 +515,10 @@ def register_curation_routes(app: FastAPI) -> None:
         to support nested names containing slashes (e.g. ``cadene/droid_1.0.1``).
         """
         dataset_path = _ensure_dataset_workspace(dataset)
-        video_path = (dataset_path / path).resolve()
-
-        # Prevent path traversal
-        if not str(video_path).startswith(str(dataset_path.resolve())):
-            raise HTTPException(status_code=403, detail="Path traversal not allowed")
+        try:
+            video_path = _resolve_child_path(dataset_path, path)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail="Path traversal not allowed") from exc
 
         if not video_path.is_file():
             info = load_dataset_info(dataset_path)
@@ -513,10 +531,12 @@ def register_curation_routes(app: FastAPI) -> None:
                     local_root=_remote_cache_root(dataset_path),
                 )
                 video_path = downloaded_path.resolve()
-            except Exception as exc:
+            except (FileNotFoundError, ValueError, HFValidationError, HfHubHTTPError) as exc:
                 raise HTTPException(status_code=404, detail="Video file not found") from exc
-            if not str(video_path).startswith(str(dataset_path.resolve()) + "/"):
-                raise HTTPException(status_code=403, detail="Path traversal not allowed")
+            try:
+                video_path.relative_to(dataset_path.resolve())
+            except ValueError as exc:
+                raise HTTPException(status_code=403, detail="Path traversal not allowed") from exc
             if not video_path.is_file():
                 raise HTTPException(status_code=404, detail="Video file not found")
 

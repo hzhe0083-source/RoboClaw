@@ -240,8 +240,12 @@ function DeltaComparisonChart({
     return <div className="episode-preview-empty">{emptyLabel}</div>
   }
 
-  const minValue = Math.min(...numericValues, 0)
-  const maxValue = Math.max(...numericValues, 0)
+  let minValue = Math.min(...numericValues, 0)
+  let maxValue = Math.max(...numericValues, 0)
+  if (Math.abs(maxValue - minValue) < 1e-6) {
+    minValue -= 1
+    maxValue += 1
+  }
   const minX = chartXValues[0] || 0
   const maxX = chartXValues[chartXValues.length - 1] || 1
   const safeRangeX = maxX - minX || 1

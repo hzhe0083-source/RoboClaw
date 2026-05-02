@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useI18n } from '@/i18n'
 import { cn } from '@/shared/lib/cn'
 import {
@@ -10,6 +10,8 @@ import { formatClipWindowLabel } from '../pages/datasetExplorerPlayback'
 import { EpisodeHoverPreview } from './EpisodeHoverPreview'
 import { EpisodePlaybackSurface } from './EpisodePlaybackSurface'
 
+const PREVIEW_CACHE_LIMIT = 24
+
 function hasTrajectoryData(detail: EpisodeDetail | null | undefined): boolean {
   if (!detail) return false
   return (
@@ -17,6 +19,106 @@ function hasTrajectoryData(detail: EpisodeDetail | null | undefined): boolean {
     detail.joint_trajectory.total_points > 0
   )
 }
+
+function rememberPreviewDetail(
+  cache: Map<number, EpisodeDetail>,
+  detailStates: Map<number, 'loading' | 'loaded'>,
+  episodeIndex: number,
+  detail: EpisodeDetail,
+): void {
+  cache.delete(episodeIndex)
+  cache.set(episodeIndex, detail)
+
+  while (cache.size > PREVIEW_CACHE_LIMIT) {
+    const oldestKey = cache.keys().next().value
+    if (typeof oldestKey !== 'number') {
+      return
+    }
+    cache.delete(oldestKey)
+    detailStates.delete(oldestKey)
+  }
+}
+
+const EpisodeDetailPanel = memo(function EpisodeDetailPanel({ detail }: { detail: EpisodeDetail }) {
+  const { t } = useI18n()
+  const [detailVideoCurrentTime, setDetailVideoCurrentTime] = useState(0)
+
+  useEffect(() => {
+    setDetailVideoCurrentTime(0)
+  }, [detail.episode_index])
+
+  return (
+    <div className="explorer-episode-detail">
+      <div className="explorer-episode-detail__summary">
+        <span>{detail.summary.row_count} rows</span>
+        <span>{detail.summary.duration_s}s</span>
+        <span>{detail.summary.fps} fps</span>
+        <span>{detail.summary.video_count} videos</span>
+      </div>
+
+      {detail.videos.length > 0 && (
+        <div className="explorer-episode-detail__section">
+          <h4>Playback</h4>
+          <EpisodePlaybackSurface
+            detail={detail}
+            playVideo
+            videoCurrentTime={detailVideoCurrentTime}
+            onVideoTimeUpdate={setDetailVideoCurrentTime}
+            emptyLabel="No video stream available for this episode."
+          />
+        </div>
+      )}
+
+      {detail.videos.length > 0 && (
+        <div className="explorer-episode-detail__section">
+          <h4>Video Sources</h4>
+          <ul className="explorer-video-list">
+            {detail.videos.map((v) => (
+              <li key={v.path}>
+                <strong>{v.stream}</strong> — {v.path}
+                {formatClipWindowLabel(v) ? ` (${formatClipWindowLabel(v)})` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {detail.sample_rows.length > 0 && (
+        <div className="explorer-episode-detail__section">
+          <h4>{t('sampleRows')}</h4>
+          <div className="quality-table-wrap">
+            <table className="quality-table explorer-sample-table">
+              <thead>
+                <tr>
+                  {Object.keys(detail.sample_rows[0]).map((col) => (
+                    <th key={col}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {detail.sample_rows.map((row, idx) => (
+                  <tr key={idx}>
+                    {Object.values(row).map((val, ci) => (
+                      <td key={ci}>
+                        {Array.isArray(val)
+                          ? `[${val.join(', ')}]`
+                          : val == null
+                            ? '-'
+                            : typeof val === 'number'
+                              ? val.toFixed(4)
+                              : String(val)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})
 
 export function buildExplorerQuery(ref: ExplorerDatasetRef): string {
   const params = new URLSearchParams()
@@ -60,7 +162,6 @@ export function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef 
   const [hoveredPreviewError, setHoveredPreviewError] = useState('')
   const [previewPlayReady, setPreviewPlayReady] = useState(false)
   const [videoCurrentTime, setVideoCurrentTime] = useState(0)
-  const [detailVideoCurrentTime, setDetailVideoCurrentTime] = useState(0)
 
   useEffect(() => {
     previewCacheRef.current.clear()
@@ -78,12 +179,7 @@ export function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef 
     setHoveredPreviewError('')
     setPreviewPlayReady(false)
     setVideoCurrentTime(0)
-    setDetailVideoCurrentTime(0)
   }, [selectedDataset, datasetRef.path, datasetRef.source])
-
-  useEffect(() => {
-    setDetailVideoCurrentTime(0)
-  }, [episodeDetail?.episode_index])
 
   useEffect(() => {
     return () => {
@@ -202,7 +298,12 @@ export function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef 
         throw new Error(`Failed to load trajectory comparison (${response.status})`)
       }
       const detail: EpisodeDetail = await response.json()
-      previewCacheRef.current.set(episodeIndex, detail)
+      rememberPreviewDetail(
+        previewCacheRef.current,
+        previewDetailStateRef.current,
+        episodeIndex,
+        detail,
+      )
       previewDetailStateRef.current.set(episodeIndex, 'loaded')
       if (requestToken === requestTokenRef.current) {
         setHoveredPreview(detail)
@@ -267,6 +368,12 @@ export function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef 
 
       const cached = previewCacheRef.current.get(episodeIndex)
       if (cached) {
+        rememberPreviewDetail(
+          previewCacheRef.current,
+          previewDetailStateRef.current,
+          episodeIndex,
+          cached,
+        )
         setHoveredPreview(cached)
         setHoveredPreviewLoading(false)
         if (hasTrajectoryData(cached) || previewDetailStateRef.current.get(episodeIndex) === 'loaded') {
@@ -287,7 +394,12 @@ export function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef 
           throw new Error(`Failed to load episode preview (${response.status})`)
         }
         const detail: EpisodeDetail = await response.json()
-        previewCacheRef.current.set(episodeIndex, detail)
+        rememberPreviewDetail(
+          previewCacheRef.current,
+          previewDetailStateRef.current,
+          episodeIndex,
+          detail,
+        )
         if (requestToken === requestTokenRef.current) {
           setHoveredPreview(detail)
         }
@@ -402,77 +514,7 @@ export function EpisodeBrowser({ datasetRef }: { datasetRef: ExplorerDatasetRef 
         </div>
       )}
 
-      {episodeDetail && !episodeLoading && !episodeError && (
-        <div className="explorer-episode-detail">
-          <div className="explorer-episode-detail__summary">
-            <span>{episodeDetail.summary.row_count} rows</span>
-            <span>{episodeDetail.summary.duration_s}s</span>
-            <span>{episodeDetail.summary.fps} fps</span>
-            <span>{episodeDetail.summary.video_count} videos</span>
-          </div>
-
-          {episodeDetail.videos.length > 0 && (
-            <div className="explorer-episode-detail__section">
-              <h4>Playback</h4>
-              <EpisodePlaybackSurface
-                detail={episodeDetail}
-                playVideo
-                videoCurrentTime={detailVideoCurrentTime}
-                onVideoTimeUpdate={setDetailVideoCurrentTime}
-                emptyLabel="No video stream available for this episode."
-              />
-            </div>
-          )}
-
-          {episodeDetail.videos.length > 0 && (
-            <div className="explorer-episode-detail__section">
-              <h4>Video Sources</h4>
-              <ul className="explorer-video-list">
-                {episodeDetail.videos.map((v) => (
-                  <li key={v.path}>
-                    <strong>{v.stream}</strong> — {v.path}
-                    {formatClipWindowLabel(v) ? ` (${formatClipWindowLabel(v)})` : ''}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {episodeDetail.sample_rows.length > 0 && (
-            <div className="explorer-episode-detail__section">
-              <h4>{t('sampleRows')}</h4>
-              <div className="quality-table-wrap">
-                <table className="quality-table explorer-sample-table">
-                  <thead>
-                    <tr>
-                      {Object.keys(episodeDetail.sample_rows[0]).map((col) => (
-                        <th key={col}>{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {episodeDetail.sample_rows.map((row, idx) => (
-                      <tr key={idx}>
-                        {Object.values(row).map((val, ci) => (
-                          <td key={ci}>
-                            {Array.isArray(val)
-                              ? `[${val.join(', ')}]`
-                              : val == null
-                                ? '-'
-                                : typeof val === 'number'
-                                  ? val.toFixed(4)
-                                  : String(val)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {episodeDetail && !episodeLoading && !episodeError && <EpisodeDetailPanel detail={episodeDetail} />}
     </div>
   )
 }
