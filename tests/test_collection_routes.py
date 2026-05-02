@@ -23,6 +23,7 @@ class FakeService:
         self.started: dict[str, Any] | None = None
         self.stopped = False
         self.fail_start = False
+        self.fail_stop = False
         self.status: dict[str, Any] = {
             "state": "idle",
             "record_phase": "idle",
@@ -47,8 +48,18 @@ class FakeService:
         return kwargs["dataset_name"]
 
     async def stop(self) -> None:
+        if self.fail_stop:
+            self.status.update({
+                "state": "error",
+                "record_phase": "error",
+                "error": "local recording process already crashed",
+            })
+            raise RuntimeError("local recording process already crashed")
         self.stopped = True
         self.status.update({"state": "idle", "record_phase": "idle"})
+
+    async def dismiss_error(self) -> None:
+        self.status.update({"state": "idle", "record_phase": "idle", "error": ""})
 
     def get_status(self) -> dict[str, Any]:
         return dict(self.status)
@@ -278,3 +289,29 @@ def test_finish_failure_is_queued_without_persisting_token(client: TestClient, a
     assert retry.status_code == 200
     assert retry.json()["synced"] == 1
     assert json.loads(pending_path.read_text(encoding="utf-8")) == []
+
+
+def test_stop_failure_marks_cloud_run_failed_and_clears_active(client: TestClient, app: FastAPI) -> None:
+    start = client.post(
+        "/api/collection/runs/start",
+        headers={"Authorization": "Bearer secret-token"},
+        json={"assignment_id": "assign-1"},
+    )
+    assert start.status_code == 200
+    app.state.fake_service.fail_stop = True
+
+    stop = client.post("/api/collection/runs/stop", headers={"Authorization": "Bearer secret-token"})
+
+    assert stop.status_code == 200
+    assert stop.json()["status"] == "failed"
+    assert stop.json()["local_stop_error"] == "local recording process already crashed"
+    finish = app.state.fake_cloud.requests[-1]
+    assert finish["path"] == "/collection/runs/run-1/finish"
+    assert finish["json"]["status"] == "failed"
+    assert finish["json"]["error_message"] == "local recording process already crashed"
+
+    status = client.get("/api/collection/status")
+    assert status.status_code == 200
+    assert status.json()["active_run"] is None
+    assert status.json()["session"]["state"] == "idle"
+    assert status.json()["session"]["error"] == ""

@@ -542,6 +542,8 @@ export default function ControlPage() {
       const result = await collectionApi.stopRun()
       if (result.status === 'pending_cloud_finish') {
         setCollectionError(`本地采集已结束，云端 finish 待重试：${result.detail || ''}`)
+      } else if (result.status === 'failed') {
+        setCollectionError(`采集进程已异常退出，已释放任务：${result.local_stop_error || result.run?.status || ''}`)
       }
     })
   }

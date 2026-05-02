@@ -79,9 +79,10 @@ export interface RunStartResponse {
 }
 
 export interface RunStopResponse {
-  status: 'finished' | 'pending_cloud_finish'
+  status: 'finished' | 'failed' | 'pending_cloud_finish'
   pending_finish_count: number
   detail?: string
+  local_stop_error?: string | null
   run?: {
     id: string
     status: string

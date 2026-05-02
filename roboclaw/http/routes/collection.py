@@ -201,8 +201,29 @@ class CollectionCoordinator:
             raise HTTPException(404, "没有进行中的云端采集")
 
         active = self.active
-        await self.service.stop()
-        finish_payload = self._finish_payload(active, status="finished")
+        session_before_stop = self.service.get_status()
+        stop_error = ""
+        try:
+            await self.service.stop()
+        except Exception as exc:
+            stop_error = str(exc)
+        session_after_stop = self.service.get_status()
+        session_error = str(session_before_stop.get("error") or session_after_stop.get("error") or "")
+        local_failed = (
+            bool(stop_error)
+            or session_before_stop.get("state") == "error"
+            or session_after_stop.get("state") == "error"
+            or bool(session_error)
+        )
+        finish_status = "failed" if local_failed else "finished"
+        error_message = stop_error or session_error or None
+        finish_payload = self._finish_payload(
+            active,
+            status=finish_status,
+            error_message=error_message,
+        )
+        if local_failed:
+            await self.service.dismiss_error()
         try:
             cloud_run = await self.cloud.request(
                 "POST",
@@ -217,13 +238,15 @@ class CollectionCoordinator:
             return {
                 "status": "pending_cloud_finish",
                 "detail": exc.detail,
+                "local_stop_error": stop_error or None,
                 "pending_finish_count": len(self._load_pending()),
             }
 
         self._clear_active()
         return {
-            "status": "finished",
+            "status": finish_status,
             "run": cloud_run,
+            "local_stop_error": stop_error or None,
             "pending_finish_count": len(self._load_pending()),
         }
 
