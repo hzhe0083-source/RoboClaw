@@ -9,11 +9,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from roboclaw.config.schema import EvoDataConfig
 from roboclaw.embodied.service import EmbodiedService
-
-
-REMOTE_TRAINING_HOST = "8.136.130.234"
-REMOTE_TRAINING_PORT = 9000
 
 
 class TrainStartRequest(BaseModel):
@@ -33,7 +30,12 @@ class RemoteTrainStartRequest(BaseModel):
     action: str
 
 
-def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
+def register_train_routes(
+    app: FastAPI,
+    service: EmbodiedService,
+    collection_config: EvoDataConfig | None = None,
+) -> None:
+    evo_data_config = collection_config or EvoDataConfig()
 
     @app.post("/api/train/start")
     async def train_start(body: TrainStartRequest) -> dict[str, Any]:
@@ -62,8 +64,8 @@ def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
     @app.post("/api/train/remote/start")
     async def remote_train_start(body: RemoteTrainStartRequest) -> dict[str, Any]:
         reader, writer = await asyncio.open_connection(
-            REMOTE_TRAINING_HOST,
-            REMOTE_TRAINING_PORT,
+            evo_data_config.remote_training_host,
+            evo_data_config.remote_training_port,
         )
         payload = json.dumps(body.model_dump(), ensure_ascii=False).encode("utf-8")
         writer.write(payload)

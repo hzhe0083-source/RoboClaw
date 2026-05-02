@@ -46,7 +46,7 @@ def register_all_routes(
     register_recovery_routes(app)
     register_network_routes(app, get_config)
     register_replay_routes(app, service)
-    register_train_routes(app, service)
+    register_train_routes(app, service, collection_config=collection_config)
     register_infer_routes(app, service)
     register_hub_routes(app, service)
 
