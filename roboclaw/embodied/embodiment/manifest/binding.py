@@ -208,7 +208,9 @@ def _camera_from_dict(
     validate_camera_side(side, data.get("alias", ""))
     port = data.get("port", "")
 
-    if scanned_cameras is None:
+    from roboclaw.embodied.embodiment.interface.video import camera_port_requires_rebind
+
+    if scanned_cameras is None or camera_port_requires_rebind(port):
         interface = VideoInterface.from_stable_address(
             port,
             width=data.get("width", 640),
