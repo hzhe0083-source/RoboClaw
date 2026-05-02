@@ -1,6 +1,12 @@
 import { useEffect, useMemo } from 'react'
 import { useToast } from '@/app/shell/ToastOutlet'
+import { CameraPreviewPanel } from '@/domains/control/components/CameraPreviewPanel'
+import { ServoPanel } from '@/domains/hardware/components/ServoPanel'
+import { ServoPollingToggle } from '@/domains/hardware/components/ServoPollingToggle'
+import { TemperatureHeatMap } from '@/domains/hardware/components/TemperatureHeatMap'
+import { useHardwareStore } from '@/domains/hardware/store/useHardwareStore'
 import { useRecoveryStore } from '@/domains/recovery/store/useRecoveryStore'
+import { useSessionStore } from '@/domains/session/store/useSessionStore'
 import { useSetup } from '@/domains/hardware/setup/store/useSetupStore'
 import { useI18n } from '@/i18n'
 
@@ -15,10 +21,23 @@ export default function RecoveryCenterPage() {
   const restartDashboard = useRecoveryStore((state) => state.restartDashboard)
   const devices = useSetup((state) => state.devices)
   const loadDevices = useSetup((state) => state.loadDevices)
+  const hardwareStatus = useHardwareStore((state) => state.hardwareStatus)
+  const fetchHardwareStatus = useHardwareStore((state) => state.fetchHardwareStatus)
+  const session = useSessionStore((state) => state.session)
+  const fetchSessionStatus = useSessionStore((state) => state.fetchSessionStatus)
 
   useEffect(() => {
     void loadDevices()
-  }, [loadDevices])
+    void fetchHardwareStatus()
+    void fetchSessionStatus()
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchHardwareStatus()
+        void fetchSessionStatus()
+      }
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [fetchHardwareStatus, fetchSessionStatus, loadDevices])
 
   const hardwareRows = useMemo(
     () => [
@@ -69,6 +88,9 @@ export default function RecoveryCenterPage() {
   function statusTone(ok: boolean): string {
     return ok ? 'text-gn' : 'text-rd'
   }
+
+  const busy = session.state !== 'idle' && session.state !== 'error'
+  const camerasExist = hardwareStatus && hardwareStatus.cameras.some((camera) => camera.connected)
 
   function motorStatus(alias: string): { text: string; tone: string } {
     if (!hasCheckedHardware) {
@@ -238,6 +260,37 @@ export default function RecoveryCenterPage() {
                 )}
               </section>
             )}
+          </section>
+
+          <section className="space-y-4">
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-tx">
+                设备诊断
+              </h3>
+            </div>
+
+            <div className="grid min-h-[240px] grid-cols-2 gap-4 max-[1000px]:grid-cols-1">
+              {camerasExist ? (
+                <CameraPreviewPanel cameras={hardwareStatus!.cameras} busy={busy} />
+              ) : (
+                <div className="flex items-center justify-center rounded-lg bg-sf p-4 text-sm text-tx3 shadow-card">
+                  没有可用相机画面
+                </div>
+              )}
+              <ServoPanel state={session.state} />
+            </div>
+
+            <section className="rounded-2xl border border-bd/30 bg-sf p-5 shadow-card">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-tx">
+                    {t('servoTemperature')}
+                  </h3>
+                </div>
+                <ServoPollingToggle />
+              </div>
+              <TemperatureHeatMap />
+            </section>
           </section>
         </div>
       </div>

@@ -156,12 +156,12 @@ def test_manifest_camera_persists_stable_id_and_reload_recovers_runtime_source(t
 
     manifest.set_camera("front", camera_interface)
 
-    assert manifest.snapshot["cameras"][0]["port"] == "usb-camera"
+    assert manifest.snapshot["cameras"][0]["port"] == "USB相机"
 
     with patch("roboclaw.embodied.embodiment.hardware.scan.scan_cameras", return_value=[camera_interface]):
         reloaded = Manifest(path=manifest_path)
 
-    assert reloaded.cameras[0].interface.address == "usb-camera"
+    assert reloaded.cameras[0].interface.address == "USB相机"
     assert reloaded.cameras[0].interface.runtime_address == "2"
 
 

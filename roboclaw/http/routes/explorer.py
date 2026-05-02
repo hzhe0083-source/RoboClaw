@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
-from tempfile import TemporaryDirectory
 from typing import Any, TypeVar
 from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from huggingface_hub.errors import HFValidationError, HfHubHTTPError, RepositoryNotFoundError
+from huggingface_hub.errors import HfHubHTTPError, HFValidationError, RepositoryNotFoundError
 from loguru import logger
 from pydantic import BaseModel
 
@@ -20,9 +20,8 @@ from roboclaw.data.curation.features import (
     build_joint_trajectory_payload,
     extract_action_names,
     extract_state_names,
+    resolve_timestamp,
 )
-from roboclaw.data.curation.paths import datasets_root
-from roboclaw.data.curation.serializers import episode_time_bounds
 from roboclaw.data.dataset_sessions import (
     create_uploaded_directory_session,
     register_remote_dataset_session,
@@ -59,9 +58,65 @@ class ExplorerPrepareRequest(BaseModel):
 
 
 T = TypeVar("T")
-_MAX_LOCAL_DIRECTORY_UPLOAD_FILES = 20_000
-_MAX_LOCAL_DIRECTORY_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024
-_UPLOAD_CHUNK_SIZE = 1024 * 1024
+MAX_LOCAL_DIRECTORY_UPLOAD_FILES = 4096
+MAX_LOCAL_DIRECTORY_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
+UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
+
+
+def _resolve_child_path(root: Path, relative_path: str) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = (resolved_root / relative_path).resolve()
+    resolved_path.relative_to(resolved_root)
+    return resolved_path
+
+
+def _validate_uploaded_relative_path(relative_path: str) -> str:
+    normalized = relative_path.replace("\\", "/").strip()
+    path = PurePosixPath(normalized)
+    if (
+        not normalized
+        or path.is_absolute()
+        or (bool(path.parts) and path.parts[0].endswith(":"))
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise HTTPException(status_code=400, detail=f"Invalid uploaded file path '{relative_path}'")
+    return path.as_posix()
+
+
+async def _spool_upload_file(upload: UploadFile, target: Path, total_bytes: int) -> int:
+    with target.open("wb") as output:
+        while chunk := await upload.read(UPLOAD_READ_CHUNK_BYTES):
+            total_bytes += len(chunk)
+            if total_bytes > MAX_LOCAL_DIRECTORY_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Uploaded directory exceeds {MAX_LOCAL_DIRECTORY_UPLOAD_BYTES} bytes",
+                )
+            output.write(chunk)
+    return total_bytes
+
+
+async def _spool_uploaded_directory_files(
+    files: list[UploadFile],
+    relative_paths: list[str],
+    spool_root: Path,
+) -> list[tuple[str, Path]]:
+    if len(files) != len(relative_paths):
+        raise HTTPException(status_code=400, detail="files and relative_paths length mismatch")
+    if len(files) > MAX_LOCAL_DIRECTORY_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Uploaded directory includes more than {MAX_LOCAL_DIRECTORY_UPLOAD_FILES} files",
+        )
+
+    file_payloads: list[tuple[str, Path]] = []
+    total_bytes = 0
+    for index, (upload, relative_path) in enumerate(zip(files, relative_paths)):
+        safe_relative_path = _validate_uploaded_relative_path(relative_path)
+        spool_path = spool_root / f"{index:08d}.upload"
+        total_bytes = await _spool_upload_file(upload, spool_path, total_bytes)
+        file_payloads.append((safe_relative_path, spool_path))
+    return file_payloads
 
 
 def _remote_dataset_not_accessible_detail(dataset_name: str) -> str:
@@ -108,18 +163,16 @@ async def _run_remote_dataset_call(
         raise _remote_dataset_http_exception(dataset_name, exc) from exc
 
 
-def _normalize_explorer_source_or_http(source: str | None):
-    try:
-        return normalize_explorer_source(source)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 def _local_dataset_name(dataset_path: Path) -> str:
-    root = datasets_root().resolve()
-    resolved = dataset_path.resolve()
-    if resolved.is_relative_to(root):
-        return resolved.relative_to(root).as_posix()
+    try:
+        from roboclaw.data.curation.paths import datasets_root
+
+        root = datasets_root().resolve()
+        resolved = dataset_path.resolve()
+        if str(resolved).startswith(str(root) + "/"):
+            return resolved.relative_to(root).as_posix()
+    except Exception:
+        logger.debug("Failed to derive local dataset name from datasets root", exc_info=True)
     return dataset_path.name
 
 
@@ -204,7 +257,9 @@ def _build_local_episode_payload(
     rows = data.get("rows", [])
     action_names = extract_action_names(info)
     state_names = extract_state_names(info)
-    start_ts, end_ts = episode_time_bounds(rows)
+    timestamps = [t for row in rows if (t := resolve_timestamp(row)) is not None]
+    start_ts = timestamps[0] if timestamps else None
+    end_ts = timestamps[-1] if timestamps else None
     duration_s = max(end_ts - start_ts, 0.0) if start_ts is not None and end_ts is not None else 0.0
 
     videos: list[dict[str, Any]] = []
@@ -250,7 +305,7 @@ def _resolve_dataset_context(
     dataset: str | None,
     path: str | None,
 ) -> tuple[str, str | None, Path | None]:
-    resolved_source = _normalize_explorer_source_or_http(source)
+    resolved_source = normalize_explorer_source(source)
     if resolved_source == "remote":
         if not dataset or not dataset.strip():
             raise HTTPException(status_code=400, detail="Remote explorer requests require a dataset id")
@@ -261,10 +316,7 @@ def _resolve_dataset_context(
                 status_code=400,
                 detail="Local explorer requests require a local dataset name",
             )
-        try:
-            dataset_path = resolve_local_dataset_path(dataset.strip())
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        dataset_path = resolve_local_dataset_path(dataset.strip())
         return resolved_source, _local_dataset_name(dataset_path), dataset_path
 
     if not path or not path.strip():
@@ -272,73 +324,20 @@ def _resolve_dataset_context(
             status_code=400,
             detail="Path explorer requests require a local dataset path",
         )
-    try:
-        dataset_path = resolve_path_dataset(path.strip())
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    dataset_path = resolve_path_dataset(path.strip())
     dataset_name = dataset.strip() if dataset and dataset.strip() else dataset_path.name
     return resolved_source, dataset_name, dataset_path
-
-
-def _validate_upload_relative_path(relative_path: str) -> str:
-    value = relative_path.strip()
-    candidate = PurePosixPath(value)
-    if (
-        not value
-        or candidate.is_absolute()
-        or candidate.name in {"", ".", ".."}
-        or any(part in {"", ".", ".."} for part in candidate.parts)
-    ):
-        raise HTTPException(status_code=400, detail=f"Invalid uploaded file path '{relative_path}'")
-    return candidate.as_posix()
-
-
-async def _spool_upload_to_path(
-    upload: UploadFile,
-    target: Path,
-    *,
-    remaining_bytes: int,
-) -> int:
-    written = 0
-    with target.open("wb") as handle:
-        while chunk := await upload.read(_UPLOAD_CHUNK_SIZE):
-            written += len(chunk)
-            if written > remaining_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail="Uploaded dataset directory exceeds the maximum supported size",
-                )
-            handle.write(chunk)
-    return written
 
 
 def register_explorer_routes(app: FastAPI) -> None:
     """Register all explorer API routes on *app*."""
 
     @app.get("/api/explorer/datasets")
-    async def explorer_datasets(
-        query: str = "",
-        limit: int = 8,
-        source: str = "remote",
-    ) -> list[dict]:
-        safe_limit = max(1, min(limit, 50))
-        resolved_source = _normalize_explorer_source_or_http(source)
-        needle = query.strip().lower()
+    async def explorer_datasets(source: str = "local") -> list[dict]:
+        resolved_source = normalize_explorer_source(source)
         if resolved_source == "remote":
-            if not needle:
-                return []
-            return await _run_remote_dataset_call(query, search_remote_datasets, query, safe_limit)
-
-        local_items = await asyncio.to_thread(list_local_dataset_options)
-        if needle:
-            local_items = [
-                item
-                for item in local_items
-                if needle in item["id"].lower() or needle in item["path"].lower()
-            ]
-        return local_items[:safe_limit]
+            return []
+        return await asyncio.to_thread(list_local_dataset_options)
 
     @app.get("/api/explorer/dashboard")
     async def explorer_dashboard(
@@ -452,9 +451,7 @@ def register_explorer_routes(app: FastAPI) -> None:
         path: str | None = None,
         episode_index: int = 0,
         preview: bool = False,
-        preview_only: bool = False,
     ) -> dict[str, Any]:
-        preview_requested = preview or preview_only
         resolved_source, dataset_name, dataset_path = _resolve_dataset_context(
             source=source,
             dataset=dataset,
@@ -466,7 +463,7 @@ def register_explorer_routes(app: FastAPI) -> None:
                 load_remote_episode_detail,
                 dataset_name,
                 episode_index,
-                preview_only=preview_requested,
+                preview_only=preview,
             )
         else:
             payload = await asyncio.to_thread(
@@ -474,7 +471,7 @@ def register_explorer_routes(app: FastAPI) -> None:
                 dataset_path,
                 dataset_name,
                 episode_index,
-                preview=preview_requested,
+                preview=preview,
                 source=resolved_source,
             )
         logger.info("Explorer episode loaded for '{}' ({}) #{}", dataset_name, resolved_source, episode_index)
@@ -523,7 +520,7 @@ def register_explorer_routes(app: FastAPI) -> None:
         limit: int = 8,
         source: str = "remote",
     ) -> list[dict[str, Any]]:
-        resolved_source = _normalize_explorer_source_or_http(source)
+        resolved_source = normalize_explorer_source(source)
         safe_limit = max(1, min(limit, 12))
         if resolved_source == "remote":
             payload = await _run_remote_dataset_call(q, search_remote_datasets, q, safe_limit)
@@ -556,35 +553,16 @@ def register_explorer_routes(app: FastAPI) -> None:
         relative_paths: list[str] = Form(...),
         display_name: str | None = Form(None),
     ) -> dict[str, Any]:
-        if len(files) != len(relative_paths):
-            raise HTTPException(status_code=400, detail="files and relative_paths length mismatch")
-        if not files:
-            raise HTTPException(status_code=400, detail="Uploaded dataset directory is empty")
-        if len(files) > _MAX_LOCAL_DIRECTORY_UPLOAD_FILES:
-            raise HTTPException(status_code=413, detail="Uploaded dataset directory has too many files")
-
-        validated_paths = [_validate_upload_relative_path(relative_path) for relative_path in relative_paths]
-        if len(set(validated_paths)) != len(validated_paths):
-            raise HTTPException(status_code=400, detail="Uploaded dataset directory contains duplicate paths")
-
-        with TemporaryDirectory() as temp_dir:
-            total_bytes = 0
-            file_payloads: list[tuple[str, Path]] = []
-            temp_root = Path(temp_dir)
-            for index, (upload, relative_path) in enumerate(zip(files, validated_paths)):
-                temp_path = temp_root / str(index)
-                total_bytes += await _spool_upload_to_path(
-                    upload,
-                    temp_path,
-                    remaining_bytes=_MAX_LOCAL_DIRECTORY_UPLOAD_BYTES - total_bytes,
+        with tempfile.TemporaryDirectory() as spool_dir:
+            file_payloads = await _spool_uploaded_directory_files(files, relative_paths, Path(spool_dir))
+            try:
+                payload = await asyncio.to_thread(
+                    create_uploaded_directory_session,
+                    files=file_payloads,
+                    display_name=display_name,
                 )
-                file_payloads.append((relative_path, temp_path))
-
-            payload = await asyncio.to_thread(
-                create_uploaded_directory_session,
-                files=file_payloads,
-                display_name=display_name,
-            )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         logger.info("Explorer created local directory session '{}'", payload["dataset_name"])
         return payload
 
@@ -595,28 +573,20 @@ def register_explorer_routes(app: FastAPI) -> None:
         source: str = "local",
         dataset_path: str | None = None,
     ) -> FileResponse:
-        resolved_source = _normalize_explorer_source_or_http(source)
+        resolved_source = normalize_explorer_source(source)
         if resolved_source == "path":
-            try:
-                root = resolve_path_dataset(dataset_path or "")
-            except FileNotFoundError as exc:
-                raise HTTPException(status_code=404, detail=str(exc)) from exc
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            root = resolve_path_dataset(dataset_path or "")
         else:
             if not dataset:
                 raise HTTPException(
                     status_code=400,
                     detail="Local explorer video requests require a dataset name",
                 )
-            try:
-                root = resolve_local_dataset_path(dataset)
-            except FileNotFoundError as exc:
-                raise HTTPException(status_code=404, detail=str(exc)) from exc
-        root = root.resolve()
-        video_path = (root / path).resolve()
-        if not video_path.is_relative_to(root):
-            raise HTTPException(status_code=403, detail="Path traversal not allowed")
+            root = resolve_local_dataset_path(dataset)
+        try:
+            video_path = _resolve_child_path(root, path)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail="Path traversal not allowed") from exc
         if not video_path.is_file():
             raise HTTPException(status_code=404, detail=f"Video file '{video_path}' not found")
         return FileResponse(str(video_path), media_type="video/mp4", filename=video_path.name)

@@ -63,7 +63,7 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                 },
                 "dev": {
                     "type": "string",
-                    "description": "Camera device path for bind_camera (e.g., '/dev/video4').",
+                    "description": "Camera by-path device for bind_camera (e.g., '/dev/v4l/by-path/...').",
                 },
                 "side": {
                     "type": "string",
@@ -477,7 +477,7 @@ def create_embodied_tools(tty_handoff: Any = None) -> list[EmbodiedToolGroup]:
 
 
 def _find_camera(dev: str) -> tuple[Any, str]:
-    """Scan and find a camera by device path. Returns (camera_or_None, available_list_str)."""
+    """Scan and find a camera by by-path identity. Returns (camera_or_None, available_list_str)."""
     from roboclaw.embodied.embodiment.hardware.scan import scan_cameras
     cameras = scan_cameras()
     matched = next((c for c in cameras if c.matches(dev)), None)
@@ -526,7 +526,7 @@ async def _run_modify(svc: Any, kwargs: dict[str, Any]) -> str:
         dev = kwargs.get("dev", "")
         side = kwargs.get("side", "")
         if not dev:
-            return "bind camera requires dev (e.g., '/dev/video4')."
+            return "bind camera requires dev (e.g., '/dev/v4l/by-path/...')."
         from roboclaw.embodied.embodiment.manifest.binding import validate_camera_side
         try:
             validate_camera_side(side)

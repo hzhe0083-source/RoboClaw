@@ -8,21 +8,33 @@ import { cn } from '@/shared/lib/cn'
 import ChatPanel from '@/domains/chat/components/ChatPanel'
 import AppHeader from '@/app/shell/AppHeader'
 import ToastContainer from '@/app/shell/ToastOutlet'
+import { useAuthStore } from '@/shared/lib/authStore'
 
 const NAV_ICONS: Record<string, JSX.Element> = {
-  '/control': (
+  '/collection': (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+    </svg>
+  ),
+  '/collection/publish': (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 13h8" />
+      <path d="M8 17h5" />
+    </svg>
+  ),
+  '/collection/control': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  ),
-  '/datasets': (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <ellipse cx="12" cy="5" rx="9" ry="3" />
-      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-      <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
     </svg>
   ),
   '/training': (
@@ -33,7 +45,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
       <path d="M17 6h3v3" />
     </svg>
   ),
-  '/recovery': (
+  '/collection/recovery': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
       <path d="M21 3v6h-6" />
@@ -51,6 +63,13 @@ const NAV_ICONS: Record<string, JSX.Element> = {
       <path d="M4 6h16" />
       <path d="M4 12h10" />
       <path d="M4 18h14" />
+    </svg>
+  ),
+  '/curation/data-overview': (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3h18v18H3z" />
+      <path d="M7 15l3-3 2 2 5-5" />
+      <path d="M7 7h.01" />
     </svg>
   ),
   '/settings': (
@@ -79,9 +98,13 @@ export default function AppShell() {
   const fetchHardwareStatus = useHardwareStore((state) => state.fetchHardwareStatus)
   const recoveryFaults = useRecoveryStore((state) => state.faults)
   const { t } = useI18n()
-  const [chatOpen, setChatOpen] = useState(false)
+  const user = useAuthStore((state) => state.user)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [collectionExpanded, setCollectionExpanded] = useState(
+    location.pathname.startsWith('/collection'),
+  )
   const [pipelineExpanded, setPipelineExpanded] = useState(location.pathname.startsWith('/curation'))
+  const [chatWidgetVisible, setChatWidgetVisible] = useState(true)
 
   useEffect(() => {
     connect()
@@ -93,24 +116,33 @@ export default function AppShell() {
   }, [fetchHardwareStatus])
 
   useEffect(() => {
+    if (
+      location.pathname.startsWith('/collection')
+    ) {
+      setCollectionExpanded(true)
+    }
     if (location.pathname.startsWith('/curation')) {
       setPipelineExpanded(true)
     }
   }, [location.pathname])
 
-  const navItemsBeforePipeline: NavItem[] = [
-    { path: '/control', label: t('controlCenter') },
-    { path: '/recovery', label: t('recoveryNav'), badge: recoveryFaults.length || undefined },
-  ]
+  const navItemsBeforePipeline: NavItem[] = []
   const navItemsAfterPipeline: NavItem[] = [
     { path: '/training', label: t('trainingCenter') },
     { path: '/settings', label: t('settings') },
     { path: '/logs', label: t('logs') },
   ]
+  const collectionChildren = [
+    ...(user?.level === 'admin' ? [{ path: '/collection/publish', label: '任务发布' }] : []),
+    { path: '/collection/control', label: '控制平台' },
+    { path: '/collection/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
+  ]
+  const collectionActive = location.pathname.startsWith('/collection')
   const pipelineChildren = [
     { path: '/curation/datasets', label: t('datasetReader') },
     { path: '/curation/quality', label: t('qualityWorkbench') },
     { path: '/curation/text-alignment', label: t('textAlignment') },
+    { path: '/curation/data-overview', label: t('dataOverview') },
   ]
   const pipelineActive = location.pathname.startsWith('/curation')
 
@@ -164,6 +196,84 @@ export default function AppShell() {
         </div>
 
         <nav className="app-sidebar__nav">
+          {sidebarCollapsed ? (
+            <Link
+              to="/collection/control"
+              className={cn('app-sidebar__link', collectionActive && 'app-sidebar__link--active')}
+              title="采集中心"
+            >
+              <span className="app-sidebar__link-icon">
+                {NAV_ICONS['/collection']}
+              </span>
+            </Link>
+          ) : (
+            <div className="app-sidebar__group">
+              <button
+                type="button"
+                className={cn(
+                  'app-sidebar__link',
+                  'app-sidebar__group-trigger',
+                  collectionActive && 'app-sidebar__link--active',
+                )}
+                onClick={() => setCollectionExpanded((value) => !value)}
+                aria-expanded={collectionExpanded}
+              >
+                <span className="app-sidebar__link-icon">
+                  {NAV_ICONS['/collection']}
+                </span>
+                <span className="app-sidebar__link-label">采集中心</span>
+                <span
+                  className={cn(
+                    'app-sidebar__caret',
+                    collectionExpanded && 'app-sidebar__caret--expanded',
+                  )}
+                  aria-hidden="true"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </span>
+              </button>
+
+              {collectionExpanded && (
+                <div className="app-sidebar__children">
+                  {collectionChildren.map((child) => {
+                    const active =
+                      location.pathname === child.path
+                      || location.pathname.startsWith(`${child.path}/`)
+                    return (
+                      <Link
+                        key={child.path}
+                        to={child.path}
+                        className={cn(
+                          'app-sidebar__child-link',
+                          active && 'app-sidebar__child-link--active',
+                        )}
+                      >
+                        <span className="app-sidebar__child-dot" aria-hidden="true" />
+                        <span className="app-sidebar__child-label">{child.label}</span>
+                        {child.badge && (
+                          <span className="ml-auto rounded-full bg-rd/10 px-1.5 py-0.5 text-[11px] font-bold text-rd">
+                            {child.badge}
+                          </span>
+                        )}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {navItemsBeforePipeline.map(renderNavItem)}
 
           {sidebarCollapsed ? (
@@ -250,25 +360,24 @@ export default function AppShell() {
         </main>
 
         <div className="chat-widget">
-          {chatOpen && (
-            <div className="chat-widget__panel">
-              <ChatPanel variant="widget" onClose={() => setChatOpen(false)} />
-            </div>
+          {chatWidgetVisible ? (
+            <ChatPanel variant="widget" onClose={() => setChatWidgetVisible(false)} />
+          ) : (
+            <button
+              type="button"
+              className="chat-widget__trigger"
+              onClick={() => setChatWidgetVisible(true)}
+              aria-label="Open RoboClaw AI chat"
+            >
+              <span className={cn('chat-widget__dot', connected && 'chat-widget__dot--live')} aria-hidden="true" />
+              <span className="chat-widget__label">AI</span>
+              {messages.length > 0 && (
+                <span className="chat-widget__count" aria-label={`${messages.length} chat messages`}>
+                  {messages.length}
+                </span>
+              )}
+            </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => setChatOpen((value) => !value)}
-            className={cn('chat-widget__trigger', chatOpen && 'chat-widget__trigger--open')}
-            aria-expanded={chatOpen}
-            aria-label={chatOpen ? 'Close chat' : 'Open chat'}
-          >
-            <span className={cn('chat-widget__dot', connected && 'chat-widget__dot--live')} />
-            <span className="chat-widget__label">AI</span>
-            {!chatOpen && messages.length > 0 && (
-              <span className="chat-widget__count">{Math.min(messages.length, 99)}</span>
-            )}
-          </button>
         </div>
 
         <ToastContainer />

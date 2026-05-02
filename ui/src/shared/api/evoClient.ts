@@ -1,14 +1,15 @@
 /**
  * EvoMind 云端后端 API 客户端
  *
- * 所有用户认证均通过此文件访问阿里云 ECS 上的 evo-data 后端。
- * 本地 RoboClaw 后端（8766）的请求不经过此文件。
+ * 所有用户认证均通过本地 RoboClaw 后端代理访问 ECS 上的 evo-data 后端。
+ * 账号数据源由云端后端负责，当前生产账号后端连接 RDS evo_data.users。
+ * 浏览器 token 保存在 localStorage，本地后端只转发当前请求。
  *
  * 配置：在 ui/.env 或 ui/.env.local 中设置
- *   VITE_EVO_API_URL=https://api.evomind-tech.com
+ *   VITE_EVO_API_URL=/api/evo
  */
 
-const EVO_API = (import.meta.env.VITE_EVO_API_URL as string | undefined) ?? 'https://api.evomind-tech.com'
+const EVO_API = (import.meta.env.VITE_EVO_API_URL as string | undefined) ?? '/api/evo'
 
 const ACCESS_KEY = 'evo_access_token'
 

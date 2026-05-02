@@ -159,7 +159,7 @@ class HardwareContext:
 
     def _disconnected_cameras(self) -> list[str]:
         return [
-            f"Camera '{status.alias}' is disconnected"
+            status.message or f"Camera '{status.alias}' is disconnected"
             for status in self.camera_statuses
             if not status.connected
         ]

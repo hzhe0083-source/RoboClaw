@@ -628,6 +628,10 @@ def resolve_camera_interface(
     scanned_cameras: list[VideoInterface],
 ) -> VideoInterface:
     """Resolve a stored camera identity to the current scanned runtime interface."""
+    from roboclaw.embodied.embodiment.interface.video import camera_port_requires_rebind
+
+    if camera_port_requires_rebind(reference):
+        return VideoInterface.from_stable_address(reference)
     for camera in scanned_cameras:
         if camera.matches(reference):
             return camera
