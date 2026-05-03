@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -99,6 +100,61 @@ class TestSessionStatus:
             "calibration_results",
         ):
             assert field in data
+
+
+class TestRemoteTraining:
+    def test_remote_train_start_sends_newline_terminated_json(self, client):
+        captured: dict[str, bytes] = {}
+        events: list[str] = []
+
+        class FakeReader:
+            async def read(self, _limit: int) -> bytes:
+                return b'{"ok": true}\n'
+
+        class FakeWriter:
+            def write(self, payload: bytes) -> None:
+                events.append("write")
+                captured["payload"] = payload
+
+            async def drain(self) -> None:
+                events.append("drain")
+                pass
+
+            def close(self) -> None:
+                events.append("close")
+                pass
+
+            async def wait_closed(self) -> None:
+                events.append("wait_closed")
+                pass
+
+        async def fake_open_connection(_host: str, _port: int):
+            return FakeReader(), FakeWriter()
+
+        with patch("roboclaw.http.routes.train.asyncio.open_connection", side_effect=fake_open_connection):
+            resp = client.post(
+                "/api/train/remote/start",
+                json={
+                    "username": "alice",
+                    "taskName": "pick",
+                    "datasetPath": "/datasets/pick",
+                    "epochs": 10,
+                    "action": "start",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        payload = captured["payload"]
+        assert payload.endswith(b"\n")
+        assert json.loads(payload.decode("utf-8")) == {
+            "username": "alice",
+            "taskName": "pick",
+            "datasetPath": "/datasets/pick",
+            "epochs": 10,
+            "action": "start",
+        }
+        assert events == ["write", "drain", "close", "wait_closed"]
 
 
 # ---------------------------------------------------------------------------
