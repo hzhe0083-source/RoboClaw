@@ -66,6 +66,10 @@ export default function TrainingCenterPage() {
   const [remoteEpochs, setRemoteEpochs] = useState(1)
   const [remoteCheckpointEpochs, setRemoteCheckpointEpochs] = useState(1)
   const [remoteTaskName, setRemoteTaskName] = useState('')
+  const [remoteGpuCount, setRemoteGpuCount] = useState(1)
+  const [remoteGpuType, setRemoteGpuType] = useState('')
+  const [remoteBatchSize, setRemoteBatchSize] = useState(16)
+  const [remotePolicyType, setRemotePolicyType] = useState('act')
   const [remoteTasks, setRemoteTasks] = useState<Record<string, RemoteTrainingTask>>({})
   const [remoteServerConnected, setRemoteServerConnected] = useState(false)
   const [remoteTrainingPending, setRemoteTrainingPending] = useState(false)
@@ -98,6 +102,9 @@ export default function TrainingCenterPage() {
       !validEpochs ||
       !validCheckpointEpochs ||
       remoteCheckpointEpochs > remoteEpochs ||
+      remoteGpuCount < 1 ||
+      ![16, 32, 64, 128].includes(remoteBatchSize) ||
+      !POLICY_TYPES.includes(remotePolicyType) ||
       !/^[A-Za-z0-9]{1,150}$/.test(taskName)
     ) {
       alert('请检查训练参数')
@@ -112,6 +119,13 @@ export default function TrainingCenterPage() {
       const response = await postJson(REMOTE_TRAINING_START, {
         username,
         taskName,
+        datasetPath,
+        epochs: remoteEpochs,
+        checkpointEpochs: remoteCheckpointEpochs,
+        gpuCount: remoteGpuCount,
+        gpuType: remoteGpuType.trim(),
+        batchSize: remoteBatchSize,
+        policyType: remotePolicyType,
         action: '开始训练',
       }) as { message?: string; tasks?: RemoteTrainingTask[] }
       const nextTasks = Object.fromEntries((response.tasks || []).map(task => [task.taskName, task]))
@@ -226,17 +240,17 @@ export default function TrainingCenterPage() {
 
               <section className="bg-sf rounded-xl p-5 shadow-card shadow-inset-yl">
                 <h3 className="text-sm font-bold text-tx uppercase tracking-wide mb-4">训练参数</h3>
-                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono mb-3">
-                  数据集路径
-                  <input
-                    value={remoteDatasetPath}
-                    maxLength={150}
-                    onChange={(e) => setRemoteDatasetPath(e.target.value)}
-                    className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-ac"
-                  />
-                </label>
-                <div className="flex gap-3 mb-3 max-[700px]:flex-col">
-                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
+                <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono col-span-2 max-[760px]:col-span-1">
+                    数据集路径
+                    <input
+                      value={remoteDatasetPath}
+                      maxLength={150}
+                      onChange={(e) => setRemoteDatasetPath(e.target.value)}
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm focus:outline-none focus:border-ac"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono">
                     训练轮次
                     <input
                       type="number"
@@ -244,10 +258,10 @@ export default function TrainingCenterPage() {
                       max={10000000}
                       value={remoteEpochs}
                       onChange={(e) => setRemoteEpochs(Math.min(10000000, Math.max(1, Number(e.target.value) || 1)))}
-                      className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:border-ac"
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm font-mono focus:outline-none focus:border-ac"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono">
                     存档轮次
                     <input
                       type="number"
@@ -255,42 +269,82 @@ export default function TrainingCenterPage() {
                       max={10000000}
                       value={remoteCheckpointEpochs}
                       onChange={(e) => setRemoteCheckpointEpochs(Math.min(10000000, Math.max(1, Number(e.target.value) || 1)))}
-                      className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:border-ac"
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm font-mono focus:outline-none focus:border-ac"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono">
                     训练任务名称
                     <input
                       value={remoteTaskName}
                       maxLength={150}
                       pattern="[A-Za-z0-9]{1,150}"
                       onChange={(e) => setRemoteTaskName(e.target.value)}
-                      className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:border-ac"
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm font-mono focus:outline-none focus:border-ac"
                     />
                   </label>
-                </div>
-                <div className="flex gap-3 max-[700px]:flex-col">
-                  <div className="flex items-center gap-3 max-[520px]:flex-col max-[520px]:items-stretch">
-                    <button
-                      disabled={remoteTrainingPending}
-                      onClick={startRemoteTraining}
-                      className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-ac hover:bg-ac2 shadow-glow-ac
-                        transition-all active:scale-[0.97] disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none"
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono">
+                    GPU数量
+                    <input
+                      type="number"
+                      min={1}
+                      value={remoteGpuCount}
+                      onChange={(e) => setRemoteGpuCount(Math.max(1, Number(e.target.value) || 1))}
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm font-mono focus:outline-none focus:border-ac"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono">
+                    GPU类型
+                    <input
+                      value={remoteGpuType}
+                      onChange={(e) => setRemoteGpuType(e.target.value)}
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm focus:outline-none focus:border-ac"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono">
+                    Batch 大小
+                    <select
+                      value={remoteBatchSize}
+                      onChange={(e) => setRemoteBatchSize(Number(e.target.value))}
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm focus:outline-none focus:border-ac"
                     >
-                      {remoteTrainingPending ? '创建中...' : '开始训练'}
-                    </button>
-                    <div className="px-3 py-2 rounded-lg border border-bd/40 bg-bg text-sm text-tx2">
-                      当前任务数量：{remoteTaskCount}
-                    </div>
+                      {[16, 32, 64, 128].map(size => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-2xs text-tx3 font-mono">
+                    模型类型
+                    <select
+                      value={remotePolicyType}
+                      onChange={(e) => setRemotePolicyType(e.target.value)}
+                      className="h-10 bg-bg border border-bd text-tx px-3 rounded-lg text-sm focus:outline-none focus:border-ac"
+                    >
+                      {POLICY_TYPES.map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+                  <button
+                    disabled={remoteTrainingPending}
+                    onClick={startRemoteTraining}
+                    className="h-10 w-full px-4 rounded-lg text-sm font-semibold text-white bg-ac hover:bg-ac2 shadow-glow-ac
+                      transition-all active:scale-[0.97] disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none"
+                  >
+                    {remoteTrainingPending ? '创建中...' : '开始训练'}
+                  </button>
+                  <div className="h-10 w-full px-3 rounded-lg border border-bd/40 bg-bg text-sm text-tx2 flex items-center justify-center">
+                    当前任务数量：{remoteTaskCount}
                   </div>
                 </div>
-                <div className="mt-3 flex gap-3 max-[700px]:flex-col">
-                  <label className="flex flex-1 items-center gap-2 text-sm text-tx2 max-[520px]:flex-col max-[520px]:items-stretch">
-                    当前任务
+                <div className="mt-4 grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+                  <label className="flex w-full items-center gap-2 text-sm text-tx2">
+                    <span className="shrink-0">当前任务</span>
                     <select
                       value={selectedRemoteTaskName}
                       onChange={(e) => setSelectedRemoteTaskName(e.target.value)}
-                      className="flex-1 bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-ac"
+                      className="h-10 min-w-0 flex-1 bg-bg border border-bd text-tx px-3 rounded-lg text-sm focus:outline-none focus:border-ac"
                     >
                       <option value="">请选择任务</option>
                       {remoteTaskNames.map(name => (
@@ -301,7 +355,7 @@ export default function TrainingCenterPage() {
                   <button
                     disabled={remoteTrainingPending || !selectedRemoteTaskName}
                     onClick={endRemoteTraining}
-                    className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-rd hover:bg-rd/90
+                    className="h-10 w-full px-4 rounded-lg text-sm font-semibold text-white bg-rd hover:bg-rd/90
                       transition-all active:scale-[0.97] disabled:opacity-25 disabled:cursor-not-allowed"
                   >
                     结束任务
