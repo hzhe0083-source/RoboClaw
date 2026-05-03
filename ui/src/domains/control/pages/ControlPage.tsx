@@ -417,8 +417,8 @@ export default function ControlPage() {
     const [nextAssignments, nextStatus] = await Promise.all([
       collectionApi.getAssignments(targetDate),
       collectionApi.getStatus(),
+      fetchSessionStatus(),
     ])
-    await fetchSessionStatus()
     setAssignments(nextAssignments)
     setCollectionStatus(nextStatus)
   }

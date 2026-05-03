@@ -884,6 +884,10 @@ button.collection-task-card:disabled {
     gap: 12px;
 }
 
+.collection-progress-edit__grid--assignment {
+    grid-template-columns: repeat(2, minmax(130px, 1fr));
+}
+
 .collection-progress-edit__actions {
     display: flex;
     justify-content: flex-end;

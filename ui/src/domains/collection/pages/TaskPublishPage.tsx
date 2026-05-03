@@ -6,17 +6,15 @@ import {
   type CollectionTask,
   type TaskPayload,
 } from '@/domains/collection/api/collectionApi'
-import { todayIso } from '@/domains/collection/lib/metrics'
+import { assignmentProgressPct, formatHours, todayIso } from '@/domains/collection/lib/metrics'
 import { useAuthStore } from '@/shared/lib/authStore'
+import { cn } from '@/shared/lib/cn'
 import { ActionButton } from '@/shared/ui'
 
-function secondsToHours(seconds: number) {
-  return (seconds / 3600).toFixed(1)
-}
+const PHONE_PATTERN = /^1\d{10}$/
 
-function progressPct(item: Assignment) {
-  if (item.target_seconds <= 0) return 0
-  return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
+function secondsToHourValue(seconds: number) {
+  return (seconds / 3600).toFixed(1)
 }
 
 function normalizePhoneRows(rows: string[]) {
@@ -24,7 +22,7 @@ function normalizePhoneRows(rows: string[]) {
 }
 
 function invalidPhones(phones: string[]) {
-  return phones.filter((phone) => !/^1\d{10}$/.test(phone))
+  return phones.filter((phone) => !PHONE_PATTERN.test(phone))
 }
 
 function countPublishedAssignments(items: Assignment[]) {
@@ -52,8 +50,6 @@ interface AssignmentEditState {
   task_id: string
   target_date: string
   target_hours: string
-  episode_time_s: string
-  reset_time_s: string
   is_active: boolean
 }
 
@@ -63,9 +59,7 @@ function assignmentToEditState(item: Assignment): AssignmentEditState {
     phone: item.phone,
     task_id: item.task_id,
     target_date: item.target_date,
-    target_hours: secondsToHours(item.target_seconds),
-    episode_time_s: String(item.task_params.episode_time_s),
-    reset_time_s: String(item.task_params.reset_time_s),
+    target_hours: secondsToHourValue(item.target_seconds),
     is_active: item.is_active,
   }
 }
@@ -83,6 +77,17 @@ function taskToPayload(task: CollectionTask): TaskPayload {
     dataset_prefix: task.dataset_prefix,
     is_active: task.is_active,
   }
+}
+
+async function loadPublishData(progressDate: string | undefined) {
+  const progressRequest = collectionApi.getProgress(progressDate)
+  const allProgressRequest = progressDate ? collectionApi.getProgress() : progressRequest
+  const [tasks, progress, allProgress] = await Promise.all([
+    collectionApi.listTasks(),
+    progressRequest,
+    allProgressRequest,
+  ])
+  return { tasks, progress, publishCounts: countPublishedAssignments(allProgress) }
 }
 
 export default function TaskPublishPage() {
@@ -132,20 +137,19 @@ export default function TaskPublishPage() {
     setTrashReady(false)
   }
 
+  function applyPublishData(next: Awaited<ReturnType<typeof loadPublishData>>) {
+    setTasks(next.tasks)
+    setProgress(next.progress)
+    setPublishCounts(next.publishCounts)
+    setSelectedTaskId((currentTaskId) => {
+      const currentTask = next.tasks.find((task) => task.id === currentTaskId && task.is_active)
+      if (currentTask) return currentTaskId
+      return next.tasks.find((task) => task.is_active)?.id || ''
+    })
+  }
+
   async function refresh() {
-    const [nextTasks, nextProgress, allProgress] = await Promise.all([
-      collectionApi.listTasks(),
-      collectionApi.getProgress(progressDate),
-      collectionApi.getProgress(),
-    ])
-    const nextSelectedTask = nextTasks.find((task) => task.id === selectedTaskId && task.is_active)
-    const firstActiveTask = nextTasks.find((task) => task.is_active)
-    setTasks(nextTasks)
-    setProgress(nextProgress)
-    setPublishCounts(countPublishedAssignments(allProgress))
-    if (!nextSelectedTask) {
-      setSelectedTaskId(firstActiveTask?.id || '')
-    }
+    applyPublishData(await loadPublishData(progressDate))
   }
 
   useEffect(() => {
@@ -154,20 +158,9 @@ export default function TaskPublishPage() {
     async function load() {
       try {
         setError('')
-        const [nextTasks, nextProgress, allProgress] = await Promise.all([
-          collectionApi.listTasks(),
-          collectionApi.getProgress(progressDate),
-          collectionApi.getProgress(),
-        ])
+        const next = await loadPublishData(progressDate)
         if (cancelled) return
-        setTasks(nextTasks)
-        setProgress(nextProgress)
-        setPublishCounts(countPublishedAssignments(allProgress))
-        const nextSelectedTask = nextTasks.find((task) => task.id === selectedTaskId && task.is_active)
-        const firstActiveTask = nextTasks.find((task) => task.is_active)
-        if (!nextSelectedTask) {
-          setSelectedTaskId(firstActiveTask?.id || '')
-        }
+        applyPublishData(next)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       }
@@ -176,7 +169,7 @@ export default function TaskPublishPage() {
     return () => {
       cancelled = true
     }
-  }, [allDates, isLoggedIn, progressDate, selectedTaskId, targetDate, user?.level])
+  }, [isLoggedIn, progressDate, user?.level])
 
   useEffect(() => () => clearTrashReadyTimer(), [])
 
@@ -210,15 +203,19 @@ export default function TaskPublishPage() {
       if (invalid.length > 0) {
         throw new Error(`手机号格式不正确：${invalid.join(', ')}`)
       }
-      for (const phone of phones) {
-        await collectionApi.upsertAssignment({
+      const taskId = taskDialogMode === 'publish' && dialogTask ? dialogTask.id : selectedTaskId
+      if (!taskId) {
+        throw new Error('请选择任务')
+      }
+      await Promise.all(
+        phones.map((phone) => collectionApi.upsertAssignment({
           phone,
-          task_id: selectedTaskId,
+          task_id: taskId,
           target_date: targetDate,
           target_seconds: Math.round(Number(targetHours) * 3600),
           is_active: true,
-        })
-      }
+        })),
+      )
       setPhoneRows([''])
       await refresh()
       if (taskDialogMode === 'publish') {
@@ -237,16 +234,8 @@ export default function TaskPublishPage() {
     setLoading(true)
     setError('')
     try {
-      if (!/^1\d{10}$/.test(assignmentEditor.phone.trim())) {
+      if (!PHONE_PATTERN.test(assignmentEditor.phone.trim())) {
         throw new Error('手机号格式不正确')
-      }
-      const episodeSeconds = Number(assignmentEditor.episode_time_s)
-      const resetSeconds = Number(assignmentEditor.reset_time_s)
-      if (!(episodeSeconds > 0)) {
-        throw new Error('录制时间必须大于 0')
-      }
-      if (resetSeconds < 0) {
-        throw new Error('Reset 时间不能小于 0')
       }
       await collectionApi.upsertAssignment({
         phone: assignmentEditor.phone.trim(),
@@ -254,10 +243,6 @@ export default function TaskPublishPage() {
         target_date: assignmentEditor.target_date,
         target_seconds: Math.round(Number(assignmentEditor.target_hours) * 3600),
         is_active: assignmentEditor.is_active,
-      })
-      await collectionApi.updateTask(assignmentEditor.task_id, {
-        episode_time_s: Math.round(episodeSeconds),
-        reset_time_s: Math.round(resetSeconds),
       })
       await refresh()
     } catch (err) {
@@ -552,11 +537,11 @@ export default function TaskPublishPage() {
                   onDragEnd={resetTrashDragState}
                   onClick={() => openTaskDialog(task)}
                   disabled={!task.is_active}
-                  className={[
+                  className={cn(
                     'collection-task-bubble',
-                    selectedTaskId === task.id ? 'collection-task-bubble--selected' : '',
-                    !task.is_active ? 'collection-task-bubble--inactive' : '',
-                  ].filter(Boolean).join(' ')}
+                    selectedTaskId === task.id && 'collection-task-bubble--selected',
+                    !task.is_active && 'collection-task-bubble--inactive',
+                  )}
                 >
                   <div className="collection-task-bubble__top">
                     <strong>{task.task_prompt}</strong>
@@ -578,11 +563,11 @@ export default function TaskPublishPage() {
 
       {draggingTaskId && (
         <section
-          className={[
+          className={cn(
             'collection-trash-flyout',
-            trashHover ? 'collection-trash-flyout--hover' : '',
-            trashReady ? 'collection-trash-flyout--ready' : '',
-          ].filter(Boolean).join(' ')}
+            trashHover && 'collection-trash-flyout--hover',
+            trashReady && 'collection-trash-flyout--ready',
+          )}
           onDragEnter={(event) => {
             event.preventDefault()
             armTrashDrop()
@@ -605,7 +590,7 @@ export default function TaskPublishPage() {
         <div className="collection-panel__head collection-panel__head--progress">
           <div>
             <h3>{allDates ? '全部进度' : `${targetDate} 进度`}</h3>
-            <span>{progress.length} 个分配 · {secondsToHours(totalCompletedSeconds)} / {secondsToHours(totalTargetSeconds)} h</span>
+            <span>{progress.length} 个分配 · {formatHours(totalCompletedSeconds)} / {formatHours(totalTargetSeconds)}</span>
           </div>
           <div className="collection-progress-filters">
             <button
@@ -626,7 +611,7 @@ export default function TaskPublishPage() {
         </div>
         <div className="collection-progress-list">
           {progress.map((item) => {
-            const pct = progressPct(item)
+            const pct = assignmentProgressPct(item)
             const editing = assignmentEditor?.id === item.id
             return (
               <div
@@ -651,7 +636,7 @@ export default function TaskPublishPage() {
                       <strong>{item.is_active ? '分配' : '停止'}</strong>
                     </button>
                     <div className="collection-progress-row__value">
-                      {secondsToHours(item.completed_seconds)} / {secondsToHours(item.target_seconds)} h
+                      {formatHours(item.completed_seconds)} / {formatHours(item.target_seconds)}
                     </div>
                     <button
                       type="button"
@@ -678,7 +663,7 @@ export default function TaskPublishPage() {
                         ))}
                       </select>
                     </label>
-                    <div className="collection-progress-edit__grid">
+                    <div className="collection-progress-edit__grid collection-progress-edit__grid--assignment">
                       <label>
                         <span>日期</span>
                         <input className="collection-input" type="date" value={assignmentEditor.target_date} onChange={(event) => setAssignmentEditor({ ...assignmentEditor, target_date: event.target.value })} required />
@@ -686,14 +671,6 @@ export default function TaskPublishPage() {
                       <label>
                         <span>目标小时</span>
                         <input className="collection-input" type="number" min={0.1} step={0.1} value={assignmentEditor.target_hours} onChange={(event) => setAssignmentEditor({ ...assignmentEditor, target_hours: event.target.value })} required />
-                      </label>
-                      <label>
-                        <span>录制秒</span>
-                        <input className="collection-input" type="number" min={1} value={assignmentEditor.episode_time_s} onChange={(event) => setAssignmentEditor({ ...assignmentEditor, episode_time_s: event.target.value })} required />
-                      </label>
-                      <label>
-                        <span>Reset 秒</span>
-                        <input className="collection-input" type="number" min={0} value={assignmentEditor.reset_time_s} onChange={(event) => setAssignmentEditor({ ...assignmentEditor, reset_time_s: event.target.value })} required />
                       </label>
                     </div>
                     <div className="collection-progress-edit__actions">

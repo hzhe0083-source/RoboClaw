@@ -330,6 +330,33 @@ def _resolve_dataset_context(
     return resolved_source, dataset_name, dataset_path
 
 
+async def _list_explorer_dataset_options(
+    *,
+    query: str,
+    limit: int,
+    source: str,
+    remote_limit_max: int,
+    local_limit_max: int,
+) -> list[dict[str, Any]]:
+    resolved_source = normalize_explorer_source(source)
+    needle = query.strip().lower()
+    if resolved_source == "remote":
+        if not needle:
+            return []
+        safe_limit = max(1, min(limit, remote_limit_max))
+        return await _run_remote_dataset_call(query, search_remote_datasets, query, safe_limit)
+
+    safe_limit = max(1, min(limit, local_limit_max))
+    local_items = await asyncio.to_thread(list_local_dataset_options)
+    if needle:
+        local_items = [
+            item
+            for item in local_items
+            if needle in item["id"].lower() or needle in item["path"].lower()
+        ]
+    return local_items[:safe_limit]
+
+
 def register_explorer_routes(app: FastAPI) -> None:
     """Register all explorer API routes on *app*."""
 
@@ -339,23 +366,13 @@ def register_explorer_routes(app: FastAPI) -> None:
         limit: int = 8,
         source: str = "remote",
     ) -> list[dict]:
-        resolved_source = normalize_explorer_source(source)
-        needle = query.strip().lower()
-        if resolved_source == "remote":
-            if not needle:
-                return []
-            safe_limit = max(1, min(limit, 50))
-            return await _run_remote_dataset_call(query, search_remote_datasets, query, safe_limit)
-
-        safe_limit = max(1, min(limit, 500))
-        local_items = await asyncio.to_thread(list_local_dataset_options)
-        if needle:
-            local_items = [
-                item
-                for item in local_items
-                if needle in item["id"].lower() or needle in item["path"].lower()
-            ]
-        return local_items[:safe_limit]
+        return await _list_explorer_dataset_options(
+            query=query,
+            limit=limit,
+            source=source,
+            remote_limit_max=50,
+            local_limit_max=500,
+        )
 
     @app.get("/api/explorer/dashboard")
     async def explorer_dashboard(
@@ -539,17 +556,13 @@ def register_explorer_routes(app: FastAPI) -> None:
         source: str = "remote",
     ) -> list[dict[str, Any]]:
         resolved_source = normalize_explorer_source(source)
-        safe_limit = max(1, min(limit, 12))
-        if resolved_source == "remote":
-            payload = await _run_remote_dataset_call(q, search_remote_datasets, q, safe_limit)
-        else:
-            needle = q.strip().lower()
-            local_items = await asyncio.to_thread(list_local_dataset_options)
-            payload = [
-                item
-                for item in local_items
-                if needle in item["id"].lower() or needle in item["path"].lower()
-            ][:safe_limit]
+        payload = await _list_explorer_dataset_options(
+            query=q,
+            limit=limit,
+            source=resolved_source,
+            remote_limit_max=12,
+            local_limit_max=12,
+        )
         logger.info("Explorer dataset suggestions loaded for '{}' ({})", q, resolved_source)
         return payload
 

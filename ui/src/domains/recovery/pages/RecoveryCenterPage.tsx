@@ -3,7 +3,12 @@ import { useToast } from '@/app/shell/ToastOutlet'
 import { CameraPreviewPanel } from '@/domains/control/components/CameraPreviewPanel'
 import { ServoPanel } from '@/domains/hardware/components/ServoPanel'
 import { useHardwareStore } from '@/domains/hardware/store/useHardwareStore'
-import { useRecoveryStore } from '@/domains/recovery/store/useRecoveryStore'
+import {
+  RECOVERY_FAULT_TYPES,
+  recoveryFaultKey,
+  type RecoveryFaultType,
+  useRecoveryStore,
+} from '@/domains/recovery/store/useRecoveryStore'
 import { useSessionStore } from '@/domains/session/store/useSessionStore'
 import { useSetup } from '@/domains/hardware/setup/store/useSetupStore'
 import { useI18n } from '@/i18n'
@@ -55,7 +60,7 @@ export default function RecoveryCenterPage() {
     [devices.arms, devices.cameras],
   )
   const faultMap = useMemo(
-    () => new Map(faults.map((fault) => [`${fault.fault_type}:${fault.device_alias}`, fault])),
+    () => new Map(faults.map((fault) => [recoveryFaultKey(fault.fault_type, fault.device_alias), fault])),
     [faults],
   )
 
@@ -75,8 +80,8 @@ export default function RecoveryCenterPage() {
     }
   }
 
-  function faultFor(faultType: string, alias: string) {
-    return faultMap.get(`${faultType}:${alias}`)
+  function faultFor(faultType: RecoveryFaultType, alias: string) {
+    return faultMap.get(recoveryFaultKey(faultType, alias))
   }
 
   function statusText(ok: boolean): string {
@@ -94,7 +99,7 @@ export default function RecoveryCenterPage() {
     if (!hasCheckedHardware) {
       return { text: '--', tone: 'text-tx3' }
     }
-    const fault = faultFor('arm_motor_disconnected', alias)
+    const fault = faultFor(RECOVERY_FAULT_TYPES.ARM_MOTOR_DISCONNECTED, alias)
     if (!fault) {
       return { text: t('recoveryStatusNormal'), tone: 'text-gn' }
     }
@@ -106,46 +111,65 @@ export default function RecoveryCenterPage() {
 
   function renderMetric(label: string, value: string, tone = 'text-tx2') {
     return (
-      <div className="min-w-0">
+      <div key={label} className="min-w-0">
         <div className="text-[11px] font-semibold text-tx3">{label}</div>
         <div className={`mt-1 truncate text-sm font-semibold ${tone}`}>{value}</div>
       </div>
     )
   }
 
-  function renderDeviceRow(device: typeof hardwareRows[number]) {
-    const baseClass = 'grid items-center gap-3 rounded-lg border border-bd/45 bg-white/85 px-4 py-3 shadow-card md:grid-cols-[minmax(150px,0.65fr)_minmax(0,2.35fr)]'
-
+  function deviceMetrics(device: typeof hardwareRows[number]) {
     if (!hasCheckedHardware) {
-      return (
-        <div key={device.key} className={baseClass}>
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-bold text-tx">{device.alias}</span>
-            <span className="rounded border border-bd/40 bg-white px-1.5 py-0.5 text-2xs font-mono text-tx2">
-              {device.badge}
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {renderMetric(t('recoverySerialConnection'), '--', 'text-tx3')}
-            {device.kind === 'arm' ? (
-              <>
-                {renderMetric(t('recoveryCalibrationStatus'), '--', 'text-tx3')}
-                {renderMetric(t('recoveryMotorWiring'), '--', 'text-tx3')}
-              </>
-            ) : (
-              renderMetric(t('camera'), '--', 'text-tx3')
-            )}
-          </div>
-        </div>
-      )
+      const pendingMetrics = [
+        { label: t('recoverySerialConnection'), value: '--', tone: 'text-tx3' },
+      ]
+      if (device.kind === 'arm') {
+        return [
+          ...pendingMetrics,
+          { label: t('recoveryCalibrationStatus'), value: '--', tone: 'text-tx3' },
+          { label: t('recoveryMotorWiring'), value: '--', tone: 'text-tx3' },
+        ]
+      }
+      return [
+        ...pendingMetrics,
+        { label: t('camera'), value: '--', tone: 'text-tx3' },
+      ]
     }
 
     const serialOk = !faultFor(
-      device.kind === 'arm' ? 'arm_disconnected' : 'camera_disconnected',
+      device.kind === 'arm'
+        ? RECOVERY_FAULT_TYPES.ARM_DISCONNECTED
+        : RECOVERY_FAULT_TYPES.CAMERA_DISCONNECTED,
       device.alias,
     )
-    const serialText = statusText(serialOk)
-    const serialTone = statusTone(serialOk)
+    const serialMetric = {
+      label: t('recoverySerialConnection'),
+      value: statusText(serialOk),
+      tone: statusTone(serialOk),
+    }
+    if (device.kind === 'camera') {
+      return [
+        serialMetric,
+        { label: t('camera'), value: serialMetric.value, tone: serialMetric.tone },
+      ]
+    }
+
+    const calibrationFault = faultFor(RECOVERY_FAULT_TYPES.ARM_NOT_CALIBRATED, device.alias)
+    const motor = motorStatus(device.alias)
+    return [
+      serialMetric,
+      {
+        label: t('recoveryCalibrationStatus'),
+        value: calibrationFault ? t('hwUncalibrated') : t('hwCalibrated'),
+        tone: calibrationFault ? 'text-rd' : 'text-gn',
+      },
+      { label: t('recoveryMotorWiring'), value: motor.text, tone: motor.tone },
+    ]
+  }
+
+  function renderDeviceRow(device: typeof hardwareRows[number]) {
+    const baseClass = 'grid items-center gap-3 rounded-lg border border-bd/45 bg-white/85 px-4 py-3 shadow-card md:grid-cols-[minmax(150px,0.65fr)_minmax(0,2.35fr)]'
+    const metrics = deviceMetrics(device)
 
     return (
       <div key={device.key} className={baseClass}>
@@ -156,19 +180,7 @@ export default function RecoveryCenterPage() {
           </span>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          {renderMetric(t('recoverySerialConnection'), serialText, serialTone)}
-          {device.kind === 'arm' ? (
-            <>
-              {renderMetric(
-                t('recoveryCalibrationStatus'),
-                faultFor('arm_not_calibrated', device.alias) ? t('hwUncalibrated') : t('hwCalibrated'),
-                faultFor('arm_not_calibrated', device.alias) ? 'text-rd' : 'text-gn',
-              )}
-              {renderMetric(t('recoveryMotorWiring'), motorStatus(device.alias).text, motorStatus(device.alias).tone)}
-            </>
-          ) : (
-            renderMetric(t('camera'), serialText, serialTone)
-          )}
+          {metrics.map((metric) => renderMetric(metric.label, metric.value, metric.tone))}
         </div>
       </div>
     )
