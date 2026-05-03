@@ -39,6 +39,7 @@ export default function AppHeader() {
     if (location.pathname.startsWith('/collection')) return '采集中心'
     if (location.pathname.startsWith('/datasets/explorer')) return t('datasetExplorer')
     if (location.pathname.startsWith('/datasets')) return t('datasetReader')
+    if (location.pathname.startsWith('/curation/workshop')) return t('dataWorkshop')
     if (location.pathname.startsWith('/curation/datasets')) return t('datasetReader')
     if (location.pathname.startsWith('/curation/data-overview')) return t('dataOverview')
     if (location.pathname.startsWith('/curation/text-alignment')) return t('textAlignment')
