@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 WorkshopStage = Literal["dirty", "clean", "complete", "excluded"]
 GateStatus = Literal["pending", "running", "passed", "failed", "manual_required", "skipped"]
+AssemblyStatus = Literal["draft", "upload_queued"]
+UploadStatus = Literal["queued"]
 GateKey = Literal[
     "repair_diagnosis",
     "auto_prune",
@@ -30,12 +32,6 @@ GATE_KEYS: tuple[GateKey, ...] = (
 DIRTY_REQUIRED_GATES: tuple[GateKey, ...] = (
     "repair_diagnosis",
     "manual_boundary_review",
-    "quality_validation",
-)
-
-CRITICAL_BLOCKING_GATES: tuple[GateKey, ...] = (
-    "repair_diagnosis",
-    "repair",
     "quality_validation",
 )
 
@@ -121,7 +117,7 @@ class WorkshopDataset:
 @dataclass
 class UploadTask:
     id: str
-    status: str
+    status: UploadStatus
     target: str
     created_at: str
     updated_at: str
@@ -143,7 +139,7 @@ class UploadTask:
             return None
         return cls(
             id=str(payload.get("id") or ""),
-            status=str(payload.get("status") or "queued"),
+            status=_coerce_upload_status(payload.get("status")),
             target=str(payload.get("target") or ""),
             created_at=str(payload.get("created_at") or ""),
             updated_at=str(payload.get("updated_at") or ""),
@@ -155,7 +151,7 @@ class UploadTask:
 class DatasetAssembly:
     id: str
     name: str
-    status: str
+    status: AssemblyStatus
     dataset_ids: list[str]
     groups: dict[str, list[str]]
     created_at: str
@@ -181,7 +177,7 @@ class DatasetAssembly:
         return cls(
             id=str(payload["id"]),
             name=str(payload.get("name") or payload["id"]),
-            status=str(payload.get("status") or "draft"),
+            status=_coerce_assembly_status(payload.get("status")),
             dataset_ids=[str(item) for item in payload.get("dataset_ids") or []],
             groups={
                 str(key): [str(item) for item in value]
@@ -192,17 +188,6 @@ class DatasetAssembly:
             quality_summary=dict(payload.get("quality_summary") or {}),
             upload_task=UploadTask.from_dict(payload.get("upload_task")),
         )
-
-
-def default_gates() -> dict[GateKey, ProcessingGate]:
-    return {
-        key: ProcessingGate(
-            key=key,
-            required=key in DIRTY_REQUIRED_GATES,
-            label=_gate_label(key),
-        )
-        for key in GATE_KEYS
-    }
 
 
 def _gate_label(key: GateKey) -> str:
@@ -221,3 +206,11 @@ def _gate_label(key: GateKey) -> str:
 def _coerce_gate_status(value: Any) -> GateStatus:
     allowed = {"pending", "running", "passed", "failed", "manual_required", "skipped"}
     return value if value in allowed else "pending"
+
+
+def _coerce_assembly_status(value: Any) -> AssemblyStatus:
+    return value if value in {"draft", "upload_queued"} else "draft"
+
+
+def _coerce_upload_status(value: Any) -> UploadStatus:
+    return value if value == "queued" else "queued"

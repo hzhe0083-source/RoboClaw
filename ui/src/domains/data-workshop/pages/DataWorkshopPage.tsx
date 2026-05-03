@@ -218,7 +218,7 @@ export default function DataWorkshopPage() {
           ))}
         </WorkshopColumn>
 
-        <WorkshopColumn title="完整数据车间" count={assemblies.length}>
+        <WorkshopColumn title="完整数据车间" count={visibleAssemblies.length}>
           {visibleAssemblies.map((assembly) => (
             <AssemblyCard
               key={assembly.id}

@@ -163,10 +163,6 @@ class TestDataWorkshop:
             details={"n_parquet_rows": 2},
         )
         monkeypatch.setattr(data_workshop_routes._service, "resolve_dataset_path", lambda _id: dataset_dir)
-        monkeypatch.setattr(
-            "roboclaw.data.workshop.service.build_diagnosis_payload",
-            lambda _path: {"damage_type": "meta_stale", "repairable": True, "details": {"n_parquet_rows": 2}},
-        )
         monkeypatch.setattr("roboclaw.data.workshop.service.diagnose_dataset", lambda _path: diagnosis)
         monkeypatch.setattr(
             "roboclaw.data.workshop.service.repair_dataset",
@@ -190,6 +186,21 @@ class TestDataWorkshop:
 
         response = client.post(
             "/api/data-workshop/datasets/local/bad/gates/manual_boundary_review",
+            json={"status": "passed", "message": "accept"},
+        )
+
+        assert response.status_code == 409
+
+    def test_critical_structure_failure_blocks_quality_override(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        client = _client(tmp_path, monkeypatch)
+        _write_dataset(tmp_path / "datasets" / "local" / "bad_quality", total_frames=2, parquet_rows=3)
+
+        response = client.post(
+            "/api/data-workshop/datasets/local/bad_quality/gates/quality_validation",
             json={"status": "passed", "message": "accept"},
         )
 

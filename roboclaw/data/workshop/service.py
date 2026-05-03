@@ -10,7 +10,11 @@ from roboclaw.data.paths import datasets_root
 from roboclaw.data.repair.diagnosis import diagnose_dataset
 from roboclaw.data.repair.repairers import repair_dataset
 
-from .diagnostics import build_diagnosis_payload, inspect_structure
+from .diagnostics import (
+    diagnosis_payload_from_result,
+    inspect_structure,
+    inspect_structure_summary,
+)
 from .storage import (
     list_assemblies,
     new_id,
@@ -21,7 +25,6 @@ from .storage import (
     write_workshop_state,
 )
 from .types import (
-    CRITICAL_BLOCKING_GATES,
     DIRTY_REQUIRED_GATES,
     GATE_KEYS,
     DatasetAssembly,
@@ -53,7 +56,7 @@ class DataWorkshopService:
         dataset_path = self.resolve_dataset_path(dataset_id)
         state = self._load_state_with_gates(dataset_path)
         structure = inspect_structure(dataset_path)
-        diagnosis = build_diagnosis_payload(dataset_path)
+        diagnosis = diagnosis_payload_from_result(diagnose_dataset(dataset_path))
         stage = self._stage_after_diagnosis(state.get("stage"), diagnosis, structure)
         gates = self._gates_from_state(state)
         self._apply_diagnosis_to_gates(gates, diagnosis, structure)
@@ -80,12 +83,11 @@ class DataWorkshopService:
     ) -> dict[str, Any]:
         dataset_path = self.resolve_dataset_path(dataset_id)
         state = self._load_state_with_gates(dataset_path)
-        diagnosis_payload = state.get("diagnosis") or build_diagnosis_payload(dataset_path)
-        if not diagnosis_payload.get("repairable"):
+        diagnosis_result = diagnose_dataset(dataset_path)
+        diagnosis = diagnosis_payload_from_result(diagnosis_result)
+        if not diagnosis.get("repairable"):
             raise HTTPException(status_code=409, detail="Dataset is not repairable")
 
-        diagnosis_result = diagnose_dataset(dataset_path)
-        diagnosis = build_diagnosis_payload(dataset_path)
         repair_result = repair_dataset(
             diagnosis_result,
             task=task,
@@ -127,7 +129,7 @@ class DataWorkshopService:
         dataset_path = self.resolve_dataset_path(dataset_id)
         state = self._load_state_with_gates(dataset_path)
         structure = state.get("structure") or inspect_structure(dataset_path)
-        if status == "passed" and gate_key not in CRITICAL_BLOCKING_GATES:
+        if status == "passed":
             self._raise_if_critical_structure(structure)
 
         gates = self._gates_from_state(state)
@@ -216,7 +218,10 @@ class DataWorkshopService:
 
     def _scan_datasets(self) -> list[WorkshopDataset]:
         refs = [(dataset_id, path) for dataset_id, path in self._iter_dataset_entries()]
-        return [self._build_dataset(dataset_id, path) for dataset_id, path in sorted(refs)]
+        return [
+            self._build_dataset(dataset_id, path, refresh_structure=False)
+            for dataset_id, path in sorted(refs)
+        ]
 
     def _iter_dataset_entries(self) -> list[tuple[str, Path]]:
         root = self.root
@@ -242,9 +247,17 @@ class DataWorkshopService:
         dataset_id: str,
         dataset_path: Path,
         state: dict[str, Any] | None = None,
+        *,
+        refresh_structure: bool = True,
     ) -> WorkshopDataset:
         state = state if state is not None else self._load_state_with_gates(dataset_path)
-        structure = state.get("structure") or inspect_structure(dataset_path)
+        structure = state.get("structure")
+        if not structure:
+            structure = (
+                inspect_structure(dataset_path)
+                if refresh_structure
+                else inspect_structure_summary(dataset_path)
+            )
         stats = _stats_from_structure(structure)
         stage = _coerce_stage(state.get("stage")) or self._derive_stage(structure)
         return WorkshopDataset(

@@ -1,5 +1,7 @@
 export type WorkshopStage = 'dirty' | 'clean' | 'complete' | 'excluded'
 export type GateStatus = 'pending' | 'running' | 'passed' | 'failed' | 'manual_required' | 'skipped'
+export type AssemblyStatus = 'draft' | 'upload_queued'
+export type UploadStatus = 'queued'
 export type GateKey =
   | 'repair_diagnosis'
   | 'auto_prune'
@@ -56,7 +58,7 @@ export interface WorkshopDataset {
 
 export interface UploadTask {
   id: string
-  status: string
+  status: UploadStatus
   target: string
   created_at: string
   updated_at: string
@@ -66,7 +68,7 @@ export interface UploadTask {
 export interface DatasetAssembly {
   id: string
   name: string
-  status: string
+  status: AssemblyStatus
   dataset_ids: string[]
   groups: Record<string, string[]>
   created_at: string

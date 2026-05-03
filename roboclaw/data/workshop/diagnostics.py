@@ -5,16 +5,23 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+import pyarrow.compute as pc
 
-from roboclaw.data.repair.diagnosis import diagnose_dataset
-
-_PARQUET_ERRORS = (OSError, pa.lib.ArrowException)
+from roboclaw.data.repair.diagnosis import diagnose_dataset, find_tmp_videos
+from roboclaw.data.repair.io import (
+    count_video_files,
+    get_video_keys,
+    load_info,
+    safe_read_parquet_metadata,
+    safe_read_parquet_table,
+)
 
 
 def build_diagnosis_payload(dataset_path: Path) -> dict[str, Any]:
-    result = diagnose_dataset(dataset_path)
+    return diagnosis_payload_from_result(diagnose_dataset(dataset_path))
+
+
+def diagnosis_payload_from_result(result: Any) -> dict[str, Any]:
     return {
         "damage_type": result.damage_type.value,
         "repairable": result.repairable,
@@ -22,12 +29,35 @@ def build_diagnosis_payload(dataset_path: Path) -> dict[str, Any]:
     }
 
 
+def inspect_structure_summary(dataset_path: Path) -> dict[str, Any]:
+    info = _read_info(dataset_path)
+    total_episodes = _safe_int(info.get("total_episodes")) or 0
+    total_frames = _safe_int(info.get("total_frames")) or 0
+    issues = [] if info else [_issue("missing_info", "critical", "缺少 meta/info.json。")]
+    return {
+        "passed": not issues,
+        "summary": True,
+        "issues": issues,
+        "counts": {
+            "info_total_episodes": total_episodes,
+            "info_total_frames": total_frames,
+            "episode_metadata_count": 0,
+            "episode_length_sum": 0,
+            "parquet_files": 0,
+            "parquet_rows": 0,
+            "video_files": 0,
+            "video_keys": _video_key_count(info),
+            "tmp_videos": 0,
+        },
+    }
+
+
 def inspect_structure(dataset_path: Path) -> dict[str, Any]:
     info = _read_info(dataset_path)
     parquet = _inspect_data_parquet(dataset_path)
     episodes = _inspect_episode_metadata(dataset_path)
-    video_count = _count_files(dataset_path / "videos", "*.mp4")
-    tmp_video_count = _count_tmp_videos(dataset_path)
+    video_count = count_video_files(dataset_path)
+    tmp_video_count = len(find_tmp_videos(dataset_path))
     video_key_count = _video_key_count(info)
     total_episodes = _safe_int(info.get("total_episodes")) or 0
     total_frames = _safe_int(info.get("total_frames")) or 0
@@ -62,7 +92,7 @@ def _read_info(dataset_path: Path) -> dict[str, Any]:
     info_path = dataset_path / "meta" / "info.json"
     if not info_path.is_file():
         return {}
-    return json.loads(info_path.read_text(encoding="utf-8"))
+    return load_info(dataset_path)
 
 
 def _inspect_data_parquet(dataset_path: Path) -> dict[str, Any]:
@@ -70,9 +100,8 @@ def _inspect_data_parquet(dataset_path: Path) -> dict[str, Any]:
     files = 0
     unreadable: list[str] = []
     for parquet_path in sorted((dataset_path / "data").rglob("*.parquet")):
-        try:
-            metadata = pq.read_metadata(parquet_path)
-        except _PARQUET_ERRORS:
+        metadata = safe_read_parquet_metadata(parquet_path)
+        if metadata is None:
             unreadable.append(parquet_path.relative_to(dataset_path).as_posix())
             continue
         files += 1
@@ -91,12 +120,13 @@ def _inspect_episode_jsonl(dataset_path: Path, jsonl_path: Path) -> dict[str, An
     count = 0
     length_sum = 0
     unreadable: list[str] = []
-    for line in jsonl_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
-        count += 1
-        length_sum += _safe_int(row.get("length")) or 0
+    with jsonl_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            count += 1
+            length_sum += _safe_int(row.get("length")) or 0
     return {"count": count, "length_sum": length_sum, "unreadable": unreadable}
 
 
@@ -105,13 +135,13 @@ def _inspect_episode_parquets(dataset_path: Path) -> dict[str, Any]:
     length_sum = 0
     unreadable: list[str] = []
     for parquet_path in sorted((dataset_path / "meta" / "episodes").rglob("*.parquet")):
-        try:
-            table = pq.read_table(parquet_path, columns=["length"])
-        except _PARQUET_ERRORS:
+        table = safe_read_parquet_table(parquet_path, columns=["length"])
+        if table is None:
             unreadable.append(parquet_path.relative_to(dataset_path).as_posix())
             continue
         count += table.num_rows
-        length_sum += sum(_safe_int(value) or 0 for value in table["length"].to_pylist())
+        total = pc.sum(table["length"]).as_py()
+        length_sum += _safe_int(total) or 0
     return {"count": count, "length_sum": length_sum, "unreadable": unreadable}
 
 
@@ -205,25 +235,7 @@ def _check_video_presence(
 
 def _video_key_count(info: dict[str, Any]) -> int:
     features = info.get("features") if isinstance(info.get("features"), dict) else {}
-    return sum(
-        1
-        for value in features.values()
-        if isinstance(value, dict) and value.get("dtype") == "video"
-    )
-
-
-def _count_files(root: Path, pattern: str) -> int:
-    if not root.exists():
-        return 0
-    return len(list(root.rglob(pattern)))
-
-
-def _count_tmp_videos(dataset_path: Path) -> int:
-    count = 0
-    for tmp_dir in sorted(dataset_path.glob("tmp*")):
-        if tmp_dir.is_dir():
-            count += len(list(tmp_dir.rglob("*.mp4")))
-    return count
+    return len(get_video_keys({"features": features})) if features else 0
 
 
 def _issue(check: str, level: str, message: str) -> dict[str, Any]:

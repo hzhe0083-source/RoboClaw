@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { fetchJson } from '@/domains/curation/store/workflowStoreHelpers'
+import { api, postJson } from '@/shared/api/client'
 import type { DatasetAssembly, GateKey, GateStatus, WorkshopDataset } from '../types'
 
 interface DataWorkshopStore {
@@ -51,15 +51,15 @@ export const useDataWorkshopStore = create<DataWorkshopStore>((set, get) => ({
     set({ loading: true, error: '' })
     try {
       const [datasets, assemblies] = await Promise.all([
-        fetchJson<WorkshopDataset[]>('/api/data-workshop/datasets'),
-        fetchJson<DatasetAssembly[]>('/api/data-workshop/assemblies'),
+        api<WorkshopDataset[]>('/api/data-workshop/datasets'),
+        api<DatasetAssembly[]>('/api/data-workshop/assemblies'),
       ])
       const selected = get().selectedDataset
       set({
         datasets,
         assemblies,
         selectedDataset: selected
-          ? datasets.find((dataset) => dataset.id === selected.id) ?? selected
+          ? datasets.find((dataset) => dataset.id === selected.id) ?? null
           : null,
       })
     } catch (error) {
@@ -72,7 +72,7 @@ export const useDataWorkshopStore = create<DataWorkshopStore>((set, get) => ({
   selectDataset: async (datasetId) => {
     set({ acting: true, error: '' })
     try {
-      const dataset = await fetchJson<WorkshopDataset>(
+      const dataset = await api<WorkshopDataset>(
         `/api/data-workshop/datasets/${datasetId}`,
       )
       set({ selectedDataset: dataset })
@@ -110,14 +110,10 @@ export const useDataWorkshopStore = create<DataWorkshopStore>((set, get) => ({
   createAssembly: async (name, datasetIds, groups) => {
     set({ acting: true, error: '' })
     try {
-      const assembly = await fetchJson<DatasetAssembly>('/api/data-workshop/assemblies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          dataset_ids: datasetIds,
-          groups,
-        }),
+      const assembly = await postJson<DatasetAssembly>('/api/data-workshop/assemblies', {
+        name,
+        dataset_ids: datasetIds,
+        groups,
       })
       await get().load()
       return assembly
@@ -132,12 +128,13 @@ export const useDataWorkshopStore = create<DataWorkshopStore>((set, get) => ({
   queueUpload: async (assemblyId) => {
     set({ acting: true, error: '' })
     try {
-      await fetchJson<DatasetAssembly>(`/api/data-workshop/assemblies/${assemblyId}/upload`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'aliyun-oss' }),
-      })
-      await get().load()
+      const assembly = await postJson<DatasetAssembly>(
+        `/api/data-workshop/assemblies/${assemblyId}/upload`,
+        { target: 'aliyun-oss' },
+      )
+      set((state) => ({
+        assemblies: state.assemblies.map((item) => (item.id === assemblyId ? assembly : item)),
+      }))
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to queue upload' })
       throw error
@@ -149,16 +146,11 @@ export const useDataWorkshopStore = create<DataWorkshopStore>((set, get) => ({
   _mutateDataset: async (datasetId: string, url: string, payload: Record<string, unknown>) => {
     set({ acting: true, error: '' })
     try {
-      const dataset = await fetchJson<WorkshopDataset>(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const dataset = await postJson<WorkshopDataset>(url, payload)
       set((state) => ({
         selectedDataset: dataset,
         datasets: state.datasets.map((item) => (item.id === datasetId ? dataset : item)),
       }))
-      await get().load()
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Dataset action failed' })
       throw error

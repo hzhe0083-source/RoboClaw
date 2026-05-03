@@ -44,19 +44,19 @@ class UploadCreateRequest(BaseModel):
 
 def register_data_workshop_routes(app: FastAPI) -> None:
     @app.get("/api/data-workshop/datasets")
-    async def data_workshop_datasets() -> list[dict[str, Any]]:
+    def data_workshop_datasets() -> list[dict[str, Any]]:
         return _service.list_datasets()
 
     @app.get("/api/data-workshop/datasets/{dataset_id:path}")
-    async def data_workshop_dataset(dataset_id: str) -> dict[str, Any]:
+    def data_workshop_dataset(dataset_id: str) -> dict[str, Any]:
         return _service.get_dataset(dataset_id)
 
     @app.post("/api/data-workshop/datasets/{dataset_id:path}/diagnose")
-    async def data_workshop_diagnose(dataset_id: str) -> dict[str, Any]:
+    def data_workshop_diagnose(dataset_id: str) -> dict[str, Any]:
         return _service.diagnose(dataset_id)
 
     @app.post("/api/data-workshop/datasets/{dataset_id:path}/repair")
-    async def data_workshop_repair(dataset_id: str, body: RepairRequest) -> dict[str, Any]:
+    def data_workshop_repair(dataset_id: str, body: RepairRequest) -> dict[str, Any]:
         return _service.repair(
             dataset_id,
             task=body.task,
@@ -66,7 +66,7 @@ def register_data_workshop_routes(app: FastAPI) -> None:
         )
 
     @app.post("/api/data-workshop/datasets/{dataset_id:path}/gates/{gate_key}")
-    async def data_workshop_gate_update(
+    def data_workshop_gate_update(
         dataset_id: str,
         gate_key: GateKey,
         body: GateUpdateRequest,
@@ -83,15 +83,15 @@ def register_data_workshop_routes(app: FastAPI) -> None:
         )
 
     @app.post("/api/data-workshop/datasets/{dataset_id:path}/promote")
-    async def data_workshop_promote(dataset_id: str, body: PromoteRequest) -> dict[str, Any]:
+    def data_workshop_promote(dataset_id: str, body: PromoteRequest) -> dict[str, Any]:
         return _service.promote(dataset_id, body.target_stage)
 
     @app.get("/api/data-workshop/assemblies")
-    async def data_workshop_assemblies() -> list[dict[str, Any]]:
+    def data_workshop_assemblies() -> list[dict[str, Any]]:
         return _service.list_assemblies()
 
     @app.post("/api/data-workshop/assemblies")
-    async def data_workshop_create_assembly(body: AssemblyCreateRequest) -> dict[str, Any]:
+    def data_workshop_create_assembly(body: AssemblyCreateRequest) -> dict[str, Any]:
         if not body.dataset_ids:
             raise HTTPException(status_code=400, detail="dataset_ids must not be empty")
         return _service.create_assembly(
@@ -101,14 +101,14 @@ def register_data_workshop_routes(app: FastAPI) -> None:
         )
 
     @app.get("/api/data-workshop/assemblies/{assembly_id}")
-    async def data_workshop_assembly(assembly_id: str) -> dict[str, Any]:
+    def data_workshop_assembly(assembly_id: str) -> dict[str, Any]:
         try:
             return _service.get_assembly(assembly_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/api/data-workshop/assemblies/{assembly_id}/upload")
-    async def data_workshop_upload(assembly_id: str, body: UploadCreateRequest) -> dict[str, Any]:
+    def data_workshop_upload(assembly_id: str, body: UploadCreateRequest) -> dict[str, Any]:
         try:
             return _service.create_upload_placeholder(assembly_id, body.target)
         except FileNotFoundError as exc:
