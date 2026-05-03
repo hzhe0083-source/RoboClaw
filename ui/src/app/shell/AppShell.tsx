@@ -147,6 +147,24 @@ export default function AppShell() {
   ]
   const pipelineActive = location.pathname.startsWith('/curation')
 
+  const sidebarToggle = (
+    <button
+      type="button"
+      onClick={() => setSidebarCollapsed((value) => !value)}
+      className="app-sidebar__toggle"
+      aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+    >
+      <svg
+        width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        style={{ transition: 'transform 0.2s ease', transform: sidebarCollapsed ? 'rotate(180deg)' : 'none' }}
+      >
+        <polyline points="11 17 6 12 11 7" />
+        <polyline points="18 17 13 12 18 7" />
+      </svg>
+    </button>
+  )
+
   const renderNavItem = (item: NavItem) => {
     const active =
       location.pathname === item.path
@@ -179,21 +197,18 @@ export default function AppShell() {
     <div className="app-shell">
       <aside className={cn('app-sidebar', sidebarCollapsed && 'app-sidebar--collapsed')}>
         <div className="app-sidebar__header">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((value) => !value)}
-            className="app-sidebar__toggle"
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <svg
-              width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              style={{ transition: 'transform 0.2s ease', transform: sidebarCollapsed ? 'rotate(180deg)' : 'none' }}
-            >
-              <polyline points="11 17 6 12 11 7" />
-              <polyline points="18 17 13 12 18 7" />
-            </svg>
-          </button>
+          {sidebarCollapsed ? (
+            sidebarToggle
+          ) : (
+            <>
+              <div className="app-sidebar__brand-row">
+                <Link to="/collection/control" className="app-sidebar__brand">
+                  RoboClaw
+                </Link>
+                {sidebarToggle}
+              </div>
+            </>
+          )}
         </div>
 
         <nav className="app-sidebar__nav">
