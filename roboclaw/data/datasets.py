@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from loguru import logger
 
 from roboclaw.data.curation.features import extract_action_names, extract_state_names
-from roboclaw.data.curation.paths import datasets_root
+from roboclaw.data.paths import datasets_root
 from roboclaw.data.dataset_sessions import (
     get_dataset_summary,
     is_session_handle,
