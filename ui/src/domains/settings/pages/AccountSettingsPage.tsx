@@ -32,6 +32,17 @@ function LockIcon() {
     )
 }
 
+function OrganizationExitIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 21h18" />
+            <path d="M5 21V7l8-4v18" />
+            <path d="M19 21V11l-6-4" />
+            <path d="M9 13h.01" />
+        </svg>
+    )
+}
+
 function ChevronDownIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -411,7 +422,7 @@ function ResetPasswordPanel({ phone, hasPassword, onSuccess }: { phone: string; 
     )
 }
 
-// ─── NicknameRow ──────────────────────────────────────────────────────────────
+// ─── NameRow ──────────────────────────────────────────────────────────────────
 
 function NicknameRow({ user }: { user: { nickname: string | null } }) {
     const { t } = useI18n()
@@ -443,29 +454,28 @@ function NicknameRow({ user }: { user: { nickname: string | null } }) {
     }
 
     return (
-        <div className="border-t border-[color:var(--bd)]/50 px-5 py-4">
-            <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                    <span className="text-[color:var(--tx2)]"><PencilIcon /></span>
-                    <span className="text-xs text-[color:var(--tx2)]">{t('accountNickname')}</span>
+        <div className="border-t border-[color:var(--bd)]/50 first:border-t-0">
+            <button
+                type="button"
+                onClick={() => {
+                    setEditing((next) => {
+                        const open = !next
+                        if (open) setValue(storeUser?.nickname || '')
+                        setMsg('')
+                        return open
+                    })
+                }}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-[color:var(--bg2)] transition text-left"
+            >
+                <div className="flex items-center gap-3 text-[color:var(--tx2)]">
+                    <PencilIcon />
+                    <span className="text-sm font-medium text-[color:var(--tx)]">{t('accountNicknameEdit')}</span>
                 </div>
-                {!editing && (
-                    <button
-                        type="button"
-                        onClick={() => { setEditing(true); setValue(storeUser?.nickname || '') }}
-                        className="flex items-center gap-1 text-xs text-[color:var(--ac)] hover:opacity-70 transition"
-                    >
-                        <PencilIcon />{t('accountNicknameEdit')}
-                    </button>
-                )}
-            </div>
+                <span className="text-[color:var(--tx2)]">{editing ? <ChevronUpIcon /> : <ChevronDownIcon />}</span>
+            </button>
 
-            {!editing ? (
-                <p className="text-sm text-[color:var(--tx)] ml-7">
-                    {storeUser?.nickname || <span className="italic text-[color:var(--tx2)]">{t('accountNicknameNotSet')}</span>}
-                </p>
-            ) : (
-                <div className="ml-7 space-y-2">
+            {editing && (
+                <div className="px-5 pb-5 space-y-2">
                     <input
                         type="text"
                         value={value}
@@ -498,6 +508,11 @@ function NicknameRow({ user }: { user: { nickname: string | null } }) {
                         </p>
                     )}
                 </div>
+            )}
+            {msg && !editing && (
+                <p className={`px-5 pb-4 text-xs ${msg.startsWith('✓') ? 'text-[color:var(--gn)]' : 'text-[#dc3545]'}`}>
+                    {msg}
+                </p>
             )}
         </div>
     )
@@ -558,19 +573,27 @@ export default function AccountSettingsPage() {
     }
 
     const membershipRole = currentMembershipRole(user)
+    const activeMembership = user?.current_membership?.status === 'active' ? user.current_membership : null
     const pendingInvites = user?.memberships.filter((membership) => membership.status === 'invited') ?? []
-    const displayMembership = user?.current_membership ?? pendingInvites[0] ?? null
-    const roleLabel = membershipRole ? membershipRoleLabel(membershipRole) : t('settingsNotConfigured')
+    const displayMembership = activeMembership ?? pendingInvites[0] ?? null
+    const displayRole = displayMembership?.role_code ?? membershipRole
+    const roleLabel = displayRole ? membershipRoleLabel(displayRole) : t('settingsNotConfigured')
+    const accountNickname = user?.nickname?.trim()
+    const accountName = accountNickname || '未设置姓名'
+    const avatarInitial = accountNickname
+        ? accountNickname.slice(0, 1).toUpperCase()
+        : user?.phone.slice(0, 3) ?? '?'
+    const organizationName = displayMembership?.organization.name ?? '未加入组织'
 
-    const roleColor = membershipRole === 'owner'
+    const roleColor = displayRole === 'owner'
         ? 'rgba(234,179,8,0.15)'
-        : membershipRole === 'admin'
+        : displayRole === 'admin'
             ? 'rgba(47,111,228,0.14)'
             : 'rgba(100,116,139,0.12)'
 
-    const roleTextColor = membershipRole === 'owner'
+    const roleTextColor = displayRole === 'owner'
         ? '#b45309'
-        : membershipRole === 'admin'
+        : displayRole === 'admin'
             ? 'var(--ac)'
             : 'var(--tx2)'
 
@@ -580,14 +603,18 @@ export default function AccountSettingsPage() {
         return inviter.nickname?.trim() || maskPhone(inviter.phone)
     }
 
-    const handleInvitation = async (membership: MembershipInfo, status: MembershipInvitationStatus) => {
+    const handleMembershipResponse = async (
+        membership: MembershipInfo,
+        status: MembershipInvitationStatus,
+        successText: string,
+    ) => {
         setInviteActionId(membership.id)
         setInviteResult(null)
         try {
             await evoApi.respondMembershipInvitation(membership.id, status)
             const updated = await evoApi.getMe()
             setUser(updated)
-            setInviteResult({ kind: 'success', text: status === 'active' ? '已加入组织' : '已拒绝邀请' })
+            setInviteResult({ kind: 'success', text: successText })
         } catch (err) {
             setInviteResult({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
         } finally {
@@ -597,7 +624,7 @@ export default function AccountSettingsPage() {
 
     if (!user) {
         return (
-            <SettingsPageFrame title={t('accountSettingsTitle')} description={t('accountSettingsDesc')}>
+            <SettingsPageFrame>
                 <div className="glass-panel px-6 py-10 text-center">
                     <p className="text-sm text-[color:var(--tx2)] mb-4">{t('accountNotLoggedIn')}</p>
                     <button
@@ -624,14 +651,14 @@ export default function AccountSettingsPage() {
     }
 
     return (
-        <SettingsPageFrame title={t('accountSettingsTitle')} description={t('accountSettingsDesc')}>
+        <SettingsPageFrame>
             <div className="max-w-xl mx-auto space-y-6">
                 {pendingInvites.length > 0 && (
                     <div className="glass-panel px-5 py-4 space-y-4 border border-[rgba(245,158,11,0.28)]">
                         <div>
                             <p className="text-sm font-semibold text-[color:var(--tx)]">待处理组织邀请</p>
                             <p className="mt-1 text-xs text-[color:var(--tx2)]">
-                                同意后会加入对应组织，拒绝后该邀请会被关闭。
+                                同意后会加入对应组织，拒绝后该邀请会被关闭。若已在其他组织，需要先退出当前组织。
                             </p>
                         </div>
                         <div className="space-y-3">
@@ -648,7 +675,7 @@ export default function AccountSettingsPage() {
                                             type="button"
                                             className={`${btnPrimaryCls} px-3 py-2 text-xs`}
                                             disabled={inviteActionId !== null}
-                                            onClick={() => void handleInvitation(membership, 'active')}
+                                            onClick={() => void handleMembershipResponse(membership, 'active', '已加入组织')}
                                         >
                                             {inviteActionId === membership.id && <Spinner />}同意
                                         </button>
@@ -656,7 +683,7 @@ export default function AccountSettingsPage() {
                                             type="button"
                                             className={`${btnSecCls} px-3 py-2 text-xs`}
                                             disabled={inviteActionId !== null}
-                                            onClick={() => void handleInvitation(membership, 'disabled')}
+                                            onClick={() => void handleMembershipResponse(membership, 'disabled', '已拒绝邀请')}
                                         >
                                             拒绝
                                         </button>
@@ -673,30 +700,32 @@ export default function AccountSettingsPage() {
                 )}
 
                 {/* 用户信息卡 */}
-                <div className="glass-panel px-5 py-4 flex items-center gap-4">
-                    <div
-                        className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold select-none shrink-0"
-                        style={{ background: roleColor, color: roleTextColor }}
-                    >
-                        {user.phone.slice(0, 1)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-base font-semibold text-[color:var(--tx)] truncate">
-                            {maskPhone(user.phone)}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span
-                                className="text-xs px-2 py-0.5 rounded-full font-medium"
-                                style={{ background: roleColor, color: roleTextColor }}
-                            >
-                                {roleLabel}
-                            </span>
-                            {user.nickname && (
-                                <span className="text-xs text-[color:var(--tx2)] truncate">{user.nickname}</span>
-                            )}
-                            {displayMembership && (
-                                <span className="text-xs text-[color:var(--tx2)] truncate">{displayMembership.organization.name}</span>
-                            )}
+                <div className="glass-panel px-6 py-5">
+                    <div className="flex items-start gap-4">
+                        <div
+                            className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold select-none shrink-0"
+                            style={{ background: roleColor, color: roleTextColor }}
+                        >
+                            {avatarInitial}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-lg font-semibold text-[color:var(--tx)] truncate">{accountName}</p>
+                                    <p className="mt-1 text-sm font-medium text-[color:var(--tx2)]">{maskPhone(user.phone)}</p>
+                                </div>
+                                <div className="shrink-0 flex flex-col items-end gap-1.5">
+                                    <span className="max-w-[190px] truncate text-sm font-semibold text-[color:var(--tx)]">
+                                        {organizationName}
+                                    </span>
+                                    <span
+                                        className="text-xs px-2 py-0.5 rounded-full font-medium"
+                                        style={{ background: roleColor, color: roleTextColor }}
+                                    >
+                                        {roleLabel}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -712,7 +741,7 @@ export default function AccountSettingsPage() {
                         </div>
                     </div>
 
-                    {/* 昵称 */}
+                    {/* 姓名 */}
                     <NicknameRow user={user} />
 
                     {/* 更换手机号 */}
@@ -738,6 +767,22 @@ export default function AccountSettingsPage() {
                             onSuccess={() => handlePanelSuccess('reset_password')}
                         />
                     </ExpandableRow>
+
+                    {activeMembership && (
+                        <div className="border-t border-[color:var(--bd)]/50">
+                            <button
+                                type="button"
+                                className="w-full flex items-center justify-between px-5 py-4 text-left transition hover:bg-[rgba(220,53,69,0.06)] disabled:opacity-50"
+                                disabled={inviteActionId !== null}
+                                onClick={() => void handleMembershipResponse(activeMembership, 'disabled', '已退出当前组织')}
+                            >
+                                <div className="flex items-center gap-3 text-[#dc3545]">
+                                    {inviteActionId === activeMembership.id ? <Spinner /> : <OrganizationExitIcon />}
+                                    <span className="text-sm font-medium">退出当前组织</span>
+                                </div>
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </SettingsPageFrame>

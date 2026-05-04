@@ -716,6 +716,7 @@
 
 .chat-widget__trigger {
   position: relative;
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;

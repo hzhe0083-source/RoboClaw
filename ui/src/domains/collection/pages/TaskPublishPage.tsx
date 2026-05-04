@@ -13,16 +13,14 @@ import { useAuthStore } from '@/shared/lib/authStore'
 import {
   canManageCollection,
   canManageOrganization,
+  canManageOrganizationMembers,
   currentMembershipRole,
   evoApi,
   INVITE_ROLES,
   isInviteRole,
-  isMembershipStatus,
-  MEMBERSHIP_STATUSES,
   membershipRoleLabel,
   type CurrentOrganization,
   type InviteRole,
-  type MembershipStatus,
   type OrganizationMember,
 } from '@/shared/api/evoClient'
 import { cn } from '@/shared/lib/cn'
@@ -112,7 +110,7 @@ export default function TaskPublishPage() {
   const { user, isLoggedIn, isChecking } = useAuthStore()
   const membershipRole = currentMembershipRole(user)
   const currentOrganizationId = user?.current_membership?.organization.id ?? ''
-  const canEditOrganization = canManageOrganization(user)
+  const canManageMembers = canManageOrganizationMembers(user)
   const [view, setView] = useState<'publish' | 'progress' | 'members'>('publish')
   const [tasks, setTasks] = useState<CollectionTask[]>([])
   const [progress, setProgress] = useState<Assignment[]>([])
@@ -144,12 +142,17 @@ export default function TaskPublishPage() {
   const progressDate = allDates ? undefined : targetDate
   const totalTargetSeconds = progress.reduce((sum, item) => sum + item.target_seconds, 0)
   const totalCompletedSeconds = progress.reduce((sum, item) => sum + item.completed_seconds, 0)
-  const inviteRoleOptions: readonly InviteRole[] = canEditOrganization ? INVITE_ROLES : ['member']
-  const effectiveInviteRole = canEditOrganization ? memberRole : 'member'
+  const canChooseInviteRole = canManageOrganization(user)
+  const inviteRoleOptions: readonly InviteRole[] = canChooseInviteRole ? INVITE_ROLES : ['member']
+  const effectiveInviteRole: InviteRole = canChooseInviteRole ? memberRole : 'member'
   const organizationMembers = organization?.members ?? EMPTY_ORGANIZATION_MEMBERS
-  const memberInputResolver = useMemo(
-    () => createMemberInputResolver(organizationMembers),
+  const visibleOrganizationMembers = useMemo(
+    () => organizationMembers.filter((member) => member.status !== 'disabled'),
     [organizationMembers],
+  )
+  const memberInputResolver = useMemo(
+    () => createMemberInputResolver(visibleOrganizationMembers),
+    [visibleOrganizationMembers],
   )
   const resolvedPhoneRows = useMemo(
     () => memberInputResolver.resolveRows(phoneRows),
@@ -371,13 +374,13 @@ export default function TaskPublishPage() {
     }
   }
 
-  async function updateMember(member: OrganizationMember, payload: { role_code?: InviteRole; status?: MembershipStatus }) {
+  async function removeMember(member: OrganizationMember) {
     setLoading(true)
     setError('')
     setMemberNotice('')
     try {
-      await evoApi.updateOrganizationMember(member.id, payload)
-      setMemberNotice('成员权限已更新')
+      await evoApi.updateOrganizationMember(member.id, { status: 'disabled' })
+      setMemberNotice(member.status === 'invited' ? '邀请已取消' : '成员已移除')
       await refreshOrganization()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -446,6 +449,11 @@ export default function TaskPublishPage() {
 
   function removePhoneRow(index: number) {
     setPhoneRows((rows) => (rows.length === 1 ? [''] : rows.filter((_, rowIndex) => rowIndex !== index)))
+  }
+
+  function canRemoveOrganizationMember(member: OrganizationMember) {
+    if (!canManageMembers || member.role_code === 'owner') return false
+    return membershipRole === 'owner' || member.role_code === 'member' || member.status === 'invited'
   }
 
   function dragTask(event: DragEvent<HTMLButtonElement>, task: CollectionTask) {
@@ -805,7 +813,7 @@ export default function TaskPublishPage() {
             <div>
               <span className="collection-members-hero__eyebrow">组织成员</span>
               <h3>{organization?.name || '当前组织'}</h3>
-              <p>{organization?.members.length || 0} 个成员</p>
+              <p>{visibleOrganizationMembers.length} 个成员</p>
             </div>
             <span className={cn('collection-role-pill', `collection-role-pill--${membershipRole || 'member'}`)}>
               当前角色 {membershipRoleLabel(membershipRole || 'member')}
@@ -823,21 +831,26 @@ export default function TaskPublishPage() {
                 required
               />
             </div>
-            <label>
+            <div className="collection-field">
               <span>角色</span>
-              <select
-                className="collection-input"
-                value={effectiveInviteRole}
-                disabled={!canEditOrganization}
-                onChange={(event) => {
-                  if (isInviteRole(event.target.value)) setMemberRole(event.target.value)
-                }}
-              >
-                {inviteRoleOptions.map((role) => (
-                  <option key={role} value={role}>{membershipRoleLabel(role)}</option>
-                ))}
-              </select>
-            </label>
+              {canChooseInviteRole ? (
+                <select
+                  className="collection-input"
+                  value={effectiveInviteRole}
+                  onChange={(event) => {
+                    if (isInviteRole(event.target.value)) setMemberRole(event.target.value)
+                  }}
+                >
+                  {inviteRoleOptions.map((role) => (
+                    <option key={role} value={role}>{membershipRoleLabel(role)}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="collection-member-invite__fixed-role">
+                  {membershipRoleLabel('member')}
+                </div>
+              )}
+            </div>
             <ActionButton
               className="collection-member-invite__submit"
               type="submit"
@@ -848,8 +861,8 @@ export default function TaskPublishPage() {
           </form>
 
           <div className="collection-member-list">
-            {(organization?.members || []).map((member) => {
-              const editable = canEditOrganization && member.role_code !== 'owner'
+            {visibleOrganizationMembers.map((member) => {
+              const removable = canRemoveOrganizationMember(member)
               return (
                 <article className="collection-member-card" key={member.id}>
                   <div className="collection-member-card__identity">
@@ -862,6 +875,18 @@ export default function TaskPublishPage() {
                     </div>
                   </div>
                   <div className="collection-member-card__meta">
+                    {removable && (
+                      <button
+                        type="button"
+                        className="collection-member-card__remove"
+                        disabled={loading}
+                        title={member.status === 'invited' ? '取消邀请' : '移除成员'}
+                        aria-label={member.status === 'invited' ? '取消邀请' : '移除成员'}
+                        onClick={() => void removeMember(member)}
+                      >
+                        ×
+                      </button>
+                    )}
                     <span className={cn('collection-role-pill', `collection-role-pill--${member.role_code}`)}>
                       {membershipRoleLabel(member.role_code)}
                     </span>
@@ -869,39 +894,11 @@ export default function TaskPublishPage() {
                       {member.status}
                     </span>
                   </div>
-                  {editable && (
-                    <div className="collection-member-card__actions">
-                      <select
-                        className="collection-input collection-input--compact"
-                        value={member.role_code}
-                        disabled={loading}
-                        onChange={(event) => {
-                          if (isInviteRole(event.target.value)) void updateMember(member, { role_code: event.target.value })
-                        }}
-                      >
-                        {INVITE_ROLES.map((role) => (
-                          <option key={role} value={role}>{membershipRoleLabel(role)}</option>
-                        ))}
-                      </select>
-                      <select
-                        className="collection-input collection-input--compact"
-                        value={member.status}
-                        disabled={loading}
-                        onChange={(event) => {
-                          if (isMembershipStatus(event.target.value)) void updateMember(member, { status: event.target.value })
-                        }}
-                      >
-                        {MEMBERSHIP_STATUSES.map((status) => (
-                          <option key={status} value={status}>{status}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
                 </article>
               )
             })}
             {!organization && <div className="collection-empty collection-empty--compact">正在读取组织成员</div>}
-            {organization && organization.members.length === 0 && <div className="collection-empty collection-empty--compact">暂无成员</div>}
+            {organization && visibleOrganizationMembers.length === 0 && <div className="collection-empty collection-empty--compact">暂无成员</div>}
           </div>
         </section>
       )}
