@@ -163,7 +163,7 @@ export default function AppShell() {
   ]
   const canPublishTasks = canManageCollection(user)
   const collectionChildren = [
-    ...(canPublishTasks ? [{ path: '/collection/publish', label: '任务发布' }] : []),
+    ...(canPublishTasks ? [{ path: '/collection/publish', label: '管理平台' }] : []),
     { path: '/collection/control', label: '控制平台' },
     { path: '/collection/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
   ]

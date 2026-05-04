@@ -15,7 +15,6 @@ import HardwareSettingsPage from '@/domains/settings/pages/HardwareSettingsPage'
 import ProviderSettingsPage from '@/domains/settings/pages/ProviderSettingsPage'
 import HubSettingsPage from '@/domains/settings/pages/HubSettingsPage'
 import AccountSettingsPage from '@/domains/settings/pages/AccountSettingsPage'
-import OrganizationSettingsPage from '@/domains/settings/pages/OrganizationSettingsPage'
 import LogsPage from '@/domains/logs/pages/LogsPage'
 import LoginPage from '@/domains/auth/pages/LoginPage'
 import { useAuthStore } from '@/shared/lib/authStore'
@@ -74,7 +73,6 @@ function App() {
                         <Route path="settings/provider" element={<ProviderSettingsPage />} />
                         <Route path="settings/hub" element={<HubSettingsPage />} />
                         <Route path="settings/account" element={<AccountSettingsPage />} />
-                        <Route path="settings/organization" element={<OrganizationSettingsPage />} />
                         <Route path="logs" element={<LogsPage />} />
                     </Route>
                 </Route>

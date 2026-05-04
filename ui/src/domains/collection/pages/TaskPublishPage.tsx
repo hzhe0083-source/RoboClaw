@@ -8,7 +8,14 @@ import {
 } from '@/domains/collection/api/collectionApi'
 import { assignmentProgressPct, formatHours, todayIso } from '@/domains/collection/lib/metrics'
 import { useAuthStore } from '@/shared/lib/authStore'
-import { canManageCollection } from '@/shared/api/evoClient'
+import {
+  canManageCollection,
+  currentMembershipRole,
+  evoApi,
+  type CurrentOrganization,
+  type InviteRole,
+  type OrganizationMember,
+} from '@/shared/api/evoClient'
 import { cn } from '@/shared/lib/cn'
 import { ActionButton } from '@/shared/ui'
 
@@ -24,6 +31,17 @@ function normalizePhoneRows(rows: string[]) {
 
 function invalidPhones(phones: string[]) {
   return phones.filter((phone) => !PHONE_PATTERN.test(phone))
+}
+
+function maskPhone(phone: string) {
+  if (phone.length !== 11) return phone
+  return `${phone.slice(0, 3)}****${phone.slice(7)}`
+}
+
+function roleLabel(role: string) {
+  if (role === 'owner') return 'Owner'
+  if (role === 'admin') return 'Admin'
+  return 'Member'
 }
 
 function countPublishedAssignments(items: Assignment[]) {
@@ -101,9 +119,11 @@ async function loadPublishData(progressDate: string | undefined) {
 
 export default function TaskPublishPage() {
   const { user, isLoggedIn, isChecking } = useAuthStore()
-  const [view, setView] = useState<'publish' | 'progress'>('publish')
+  const membershipRole = currentMembershipRole(user)
+  const [view, setView] = useState<'publish' | 'progress' | 'members'>('publish')
   const [tasks, setTasks] = useState<CollectionTask[]>([])
   const [progress, setProgress] = useState<Assignment[]>([])
+  const [organization, setOrganization] = useState<CurrentOrganization | null>(null)
   const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ mode: 'closed' })
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [publishCounts, setPublishCounts] = useState<Record<string, number>>({})
@@ -115,6 +135,9 @@ export default function TaskPublishPage() {
   const [targetDate, setTargetDate] = useState(todayIso())
   const [allDates, setAllDates] = useState(false)
   const [targetHours, setTargetHours] = useState('3')
+  const [memberPhone, setMemberPhone] = useState('')
+  const [memberRole, setMemberRole] = useState<InviteRole>('member')
+  const [memberNotice, setMemberNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -128,6 +151,7 @@ export default function TaskPublishPage() {
   const progressDate = allDates ? undefined : targetDate
   const totalTargetSeconds = progress.reduce((sum, item) => sum + item.target_seconds, 0)
   const totalCompletedSeconds = progress.reduce((sum, item) => sum + item.completed_seconds, 0)
+  const inviteRoleOptions: InviteRole[] = membershipRole === 'owner' ? ['admin', 'member'] : ['member']
   const trashReadyTimer = useRef<number | null>(null)
 
   function clearTrashReadyTimer() {
@@ -164,6 +188,10 @@ export default function TaskPublishPage() {
     applyPublishData(await loadPublishData(progressDate))
   }
 
+  async function refreshOrganization() {
+    setOrganization(await evoApi.getCurrentOrganization())
+  }
+
   useEffect(() => {
     if (!isLoggedIn || !canManageCollection(user)) return
     let cancelled = false
@@ -182,6 +210,29 @@ export default function TaskPublishPage() {
       cancelled = true
     }
   }, [isLoggedIn, progressDate, user?.current_membership?.role_code])
+
+  useEffect(() => {
+    if (membershipRole !== 'admin') return
+    setMemberRole('member')
+  }, [membershipRole])
+
+  useEffect(() => {
+    if (!isLoggedIn || !canManageCollection(user) || view !== 'members') return
+    let cancelled = false
+    async function loadMembers() {
+      try {
+        setError('')
+        const next = await evoApi.getCurrentOrganization()
+        if (!cancelled) setOrganization(next)
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      }
+    }
+    void loadMembers()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoggedIn, view, user?.current_membership?.role_code])
 
   useEffect(() => () => clearTrashReadyTimer(), [])
 
@@ -290,6 +341,43 @@ export default function TaskPublishPage() {
       }
       setTaskDialog({ mode: 'closed' })
       await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function inviteMember(event: FormEvent) {
+    event.preventDefault()
+    setLoading(true)
+    setError('')
+    setMemberNotice('')
+    try {
+      const phone = memberPhone.trim()
+      if (!PHONE_PATTERN.test(phone)) {
+        throw new Error('手机号格式不正确')
+      }
+      await evoApi.upsertOrganizationMember(phone, membershipRole === 'owner' ? memberRole : 'member')
+      setMemberPhone('')
+      setMemberRole('member')
+      setMemberNotice('成员已加入当前组织')
+      await refreshOrganization()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function updateMember(member: OrganizationMember, payload: { role_code?: InviteRole; status?: 'active' | 'disabled' }) {
+    setLoading(true)
+    setError('')
+    setMemberNotice('')
+    try {
+      await evoApi.updateOrganizationMember(member.id, payload)
+      setMemberNotice('成员权限已更新')
+      await refreshOrganization()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -517,11 +605,19 @@ export default function TaskPublishPage() {
             >
               任务进度
             </button>
+            <button
+              type="button"
+              className={view === 'members' ? 'collection-mode-tab collection-mode-tab--active' : 'collection-mode-tab'}
+              onClick={() => setView('members')}
+            >
+              成员管理
+            </button>
           </div>
         </div>
       </div>
 
       {error && <div className="collection-error">{error}</div>}
+      {memberNotice && view === 'members' && <div className="collection-warning">{memberNotice}</div>}
 
       {view === 'publish' && (
         <div className="collection-publish-stage">
@@ -699,6 +795,98 @@ export default function TaskPublishPage() {
           })}
           {progress.length === 0 && <div className="collection-empty collection-empty--compact">暂无分配</div>}
         </div>
+        </section>
+      )}
+
+      {view === 'members' && (
+        <section className="collection-panel collection-panel--wide">
+          <div className="collection-panel__head collection-panel__head--progress">
+            <div>
+              <h3>{organization?.name || '当前组织'}</h3>
+              <span>{organization?.members.length || 0} 个成员 · 当前角色 {roleLabel(membershipRole || 'member')}</span>
+            </div>
+          </div>
+
+          <form className="collection-progress-edit" onSubmit={inviteMember}>
+            <div className="collection-progress-edit__grid collection-progress-edit__grid--assignment">
+              <label>
+                <span>手机号</span>
+                <input
+                  className="collection-input"
+                  value={memberPhone}
+                  maxLength={11}
+                  onChange={(event) => setMemberPhone(event.target.value)}
+                  placeholder="13800000000"
+                  required
+                />
+              </label>
+              <label>
+                <span>角色</span>
+                <select
+                  className="collection-input"
+                  value={membershipRole === 'owner' ? memberRole : 'member'}
+                  disabled={membershipRole !== 'owner'}
+                  onChange={(event) => setMemberRole(event.target.value as InviteRole)}
+                >
+                  {inviteRoleOptions.map((role) => (
+                    <option key={role} value={role}>{roleLabel(role)}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="collection-progress-edit__actions">
+              <ActionButton type="submit" disabled={loading || !PHONE_PATTERN.test(memberPhone.trim())}>
+                邀请成员
+              </ActionButton>
+            </div>
+          </form>
+
+          <div className="collection-progress-list">
+            {(organization?.members || []).map((member) => {
+              const editable = membershipRole === 'owner' && member.role_code !== 'owner'
+              return (
+                <div className="collection-progress-item" key={member.id}>
+                  <div className="collection-progress-row">
+                    <div>
+                      <strong>{maskPhone(member.phone)}</strong>
+                      <span>{member.nickname || '未设置昵称'}</span>
+                    </div>
+                    <div className="collection-progress-row__value">
+                      {roleLabel(member.role_code)}
+                    </div>
+                    <div className="collection-progress-row__actions">
+                      {editable ? (
+                        <>
+                          <select
+                            className="collection-input collection-input--date"
+                            value={member.role_code}
+                            disabled={loading}
+                            onChange={(event) => void updateMember(member, { role_code: event.target.value as InviteRole })}
+                          >
+                            <option value="admin">Admin</option>
+                            <option value="member">Member</option>
+                          </select>
+                          <select
+                            className="collection-input collection-input--date"
+                            value={member.status}
+                            disabled={loading}
+                            onChange={(event) => void updateMember(member, { status: event.target.value as 'active' | 'disabled' })}
+                          >
+                            <option value="active">active</option>
+                            <option value="disabled">disabled</option>
+                          </select>
+                        </>
+                      ) : (
+                        <span className="collection-progress-row__value">{member.status}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {!organization && <div className="collection-empty collection-empty--compact">正在读取组织成员</div>}
+            {organization && organization.members.length === 0 && <div className="collection-empty collection-empty--compact">暂无成员</div>}
+          </div>
         </section>
       )}
 

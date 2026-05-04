@@ -27,7 +27,6 @@ export default function SettingsPageFrame({
         { to: '/settings/provider', label: t('settingsProvider') },
         { to: '/settings/hub', label: t('hfConfig') },
         { to: '/settings/account', label: t('accountSettingsTab') },
-        { to: '/settings/organization', label: t('organizationSettingsTab') },
     ]
 
     return (

@@ -38,6 +38,7 @@ export interface UserInfo {
 }
 
 export type MembershipRole = 'owner' | 'admin' | 'member'
+export type InviteRole = 'admin' | 'member'
 
 export interface OrganizationInfo {
     id: string
@@ -195,7 +196,7 @@ export const evoApi = {
     getCurrentOrganization: (): Promise<CurrentOrganization> =>
         evoRequest('/organizations/current', {}, true),
 
-    upsertOrganizationMember: (phone: string, roleCode: MembershipRole): Promise<OrganizationMember> =>
+    upsertOrganizationMember: (phone: string, roleCode: InviteRole): Promise<OrganizationMember> =>
         evoRequest('/organizations/current/members', {
             method: 'POST',
             body: JSON.stringify({ phone, role_code: roleCode }),
@@ -203,7 +204,7 @@ export const evoApi = {
 
     updateOrganizationMember: (
         membershipId: string,
-        payload: { role_code?: MembershipRole; status?: 'active' | 'disabled' },
+        payload: { role_code?: InviteRole; status?: 'active' | 'disabled' },
     ): Promise<OrganizationMember> =>
         evoRequest(`/organizations/current/members/${membershipId}`, {
             method: 'PATCH',
