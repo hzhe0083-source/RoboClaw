@@ -90,7 +90,26 @@ interface NavItem {
   badge?: number
 }
 
-type NavGroupId = 'collection' | 'pipeline'
+type NavGroupId = 'collection' | 'pipeline' | 'settings'
+
+const NAV_GROUP_ROOTS: Record<NavGroupId, string> = {
+  collection: '/collection',
+  pipeline: '/curation',
+  settings: '/settings',
+}
+
+function createExpandedGroups(pathname: string): Record<NavGroupId, boolean> {
+  return {
+    collection: pathname.startsWith(NAV_GROUP_ROOTS.collection),
+    pipeline: pathname.startsWith(NAV_GROUP_ROOTS.pipeline),
+    settings: pathname.startsWith(NAV_GROUP_ROOTS.settings),
+  }
+}
+
+function activeNavGroupId(pathname: string): NavGroupId | null {
+  return (Object.entries(NAV_GROUP_ROOTS) as Array<[NavGroupId, string]>)
+    .find(([, rootPath]) => pathname.startsWith(rootPath))?.[0] ?? null
+}
 
 interface NavGroup {
   id: NavGroupId
@@ -113,11 +132,8 @@ export default function AppShell() {
     typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
   ))
   const [openCompactGroup, setOpenCompactGroup] = useState<NavGroupId | null>(null)
-  const [collectionExpanded, setCollectionExpanded] = useState(
-    location.pathname.startsWith('/collection'),
-  )
-  const [pipelineExpanded, setPipelineExpanded] = useState(location.pathname.startsWith('/curation'))
-  const [chatWidgetVisible, setChatWidgetVisible] = useState(true)
+  const [expandedGroups, setExpandedGroups] = useState(() => createExpandedGroups(location.pathname))
+  const [chatWidgetVisible, setChatWidgetVisible] = useState(false)
 
   useEffect(() => {
     connect()
@@ -147,18 +163,18 @@ export default function AppShell() {
       setOpenCompactGroup(null)
       return
     }
-    if (location.pathname.startsWith('/collection')) {
-      setCollectionExpanded(true)
-    }
-    if (location.pathname.startsWith('/curation')) {
-      setPipelineExpanded(true)
-    }
+    const activeGroupId = activeNavGroupId(location.pathname)
+    if (!activeGroupId) return
+    setExpandedGroups((current) => (
+      current[activeGroupId] ? current : { ...current, [activeGroupId]: true }
+    ))
   }, [compactNav, location.pathname])
 
   const navItemsBeforePipeline: NavItem[] = []
-  const navItemsAfterPipeline: NavItem[] = [
+  const navItemsBeforeSettings: NavItem[] = [
     { path: '/training', label: t('trainingCenter') },
-    { path: '/settings', label: t('settings') },
+  ]
+  const navItemsAfterSettings: NavItem[] = [
     { path: '/logs', label: t('logs') },
   ]
   const canPublishTasks = canManageCollection(user)
@@ -174,8 +190,14 @@ export default function AppShell() {
     { path: '/curation/text-alignment', label: t('textAlignment') },
     { path: '/curation/data-overview', label: t('dataOverview') },
   ]
-  const navGroups: NavGroup[] = [
-    {
+  const settingsChildren = [
+    { path: '/settings/hardware', label: t('settingsHardware') },
+    { path: '/settings/provider', label: t('settingsProvider') },
+    { path: '/settings/hub', label: t('hfConfig') },
+    { path: '/settings/account', label: t('accountSettingsTab') },
+  ]
+  const navGroups: Record<NavGroupId, NavGroup> = {
+    collection: {
       id: 'collection',
       rootPath: '/collection',
       collapsedPath: '/collection/control',
@@ -183,7 +205,7 @@ export default function AppShell() {
       label: '采集中心',
       children: collectionChildren,
     },
-    {
+    pipeline: {
       id: 'pipeline',
       rootPath: '/curation',
       collapsedPath: '/curation',
@@ -191,13 +213,21 @@ export default function AppShell() {
       label: t('pipelineNav'),
       children: pipelineChildren,
     },
-  ]
+    settings: {
+      id: 'settings',
+      rootPath: '/settings',
+      collapsedPath: '/settings/hardware',
+      iconPath: '/settings',
+      label: t('settings'),
+      children: settingsChildren,
+    },
+  }
 
   function isNavGroupExpanded(group: NavGroupId): boolean {
     if (compactNav) {
       return openCompactGroup === group
     }
-    return group === 'collection' ? collectionExpanded : pipelineExpanded
+    return expandedGroups[group]
   }
 
   function toggleNavGroup(group: NavGroupId) {
@@ -205,11 +235,7 @@ export default function AppShell() {
       setOpenCompactGroup((current) => (current === group ? null : group))
       return
     }
-    if (group === 'collection') {
-      setCollectionExpanded((value) => !value)
-      return
-    }
-    setPipelineExpanded((value) => !value)
+    setExpandedGroups((current) => ({ ...current, [group]: !current[group] }))
   }
 
   function closeCompactNavGroup() {
@@ -339,8 +365,7 @@ export default function AppShell() {
           <div className="app-sidebar__children">
             {group.children.map((child) => {
               const childActive =
-                location.pathname === child.path
-                || location.pathname.startsWith(`${child.path}/`)
+                location.pathname === child.path || location.pathname.startsWith(`${child.path}/`)
               return (
                 <Link
                   key={child.path}
@@ -392,13 +417,17 @@ export default function AppShell() {
         </div>
 
         <nav className="app-sidebar__nav">
-          {renderNavGroup(navGroups[0])}
+          {renderNavGroup(navGroups.collection)}
 
           {navItemsBeforePipeline.map(renderNavItem)}
 
-          {renderNavGroup(navGroups[1])}
+          {renderNavGroup(navGroups.pipeline)}
 
-          {navItemsAfterPipeline.map(renderNavItem)}
+          {navItemsBeforeSettings.map(renderNavItem)}
+
+          {renderNavGroup(navGroups.settings)}
+
+          {navItemsAfterSettings.map(renderNavItem)}
         </nav>
       </aside>
 

@@ -944,7 +944,7 @@ button.collection-task-card:disabled {
 
 .collection-member-invite {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) minmax(160px, 220px) auto;
+    grid-template-columns: minmax(260px, 1fr) minmax(120px, 180px) auto;
     align-items: end;
     gap: 12px;
     border: 1px solid rgba(47, 111, 228, 0.1);
@@ -966,14 +966,28 @@ button.collection-task-card:disabled {
     white-space: nowrap;
 }
 
+.collection-member-invite__fixed-role {
+    display: inline-flex;
+    min-height: 42px;
+    align-items: center;
+    border: 1px solid rgba(31, 157, 138, 0.16);
+    border-radius: 8px;
+    background: rgba(31, 157, 138, 0.07);
+    padding: 0 12px;
+    color: #15776a;
+    font-size: 13px;
+    font-weight: 850;
+}
+
 .collection-member-list {
     display: grid;
     gap: 10px;
 }
 
 .collection-member-card {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) auto minmax(276px, auto);
+    grid-template-columns: minmax(220px, 1fr) auto;
     align-items: center;
     gap: 14px;
     border: 1px solid rgba(31, 61, 112, 0.08);
@@ -1034,6 +1048,41 @@ button.collection-task-card:disabled {
     gap: 8px;
 }
 
+.collection-member-card__remove {
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(220, 53, 69, 0.16);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.95);
+    color: #dc3545;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0;
+    cursor: pointer;
+    transform: scale(0.92);
+    transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+}
+
+.collection-member-card:hover .collection-member-card__remove,
+.collection-member-card__remove:focus-visible {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.collection-member-card__remove:hover {
+    background: rgba(220, 53, 69, 0.08);
+}
+
+.collection-member-card__remove:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}
+
 .collection-role-pill,
 .collection-status-pill {
     display: inline-flex;
@@ -1059,9 +1108,9 @@ button.collection-task-card:disabled {
 }
 
 .collection-role-pill--member {
-    border-color: rgba(31, 157, 138, 0.16);
-    background: rgba(31, 157, 138, 0.09);
-    color: #15776a;
+    border-color: rgba(100, 116, 139, 0.18);
+    background: rgba(100, 116, 139, 0.09);
+    color: #475569;
 }
 
 .collection-status-pill--active {
