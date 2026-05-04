@@ -58,6 +58,28 @@
   font-weight: 800;
 }
 
+.control-hardware-state {
+  display: flex;
+  min-width: 130px;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.control-hardware-readiness {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.control-hardware-readiness.is-ready {
+  color: #178a48;
+}
+
+.control-hardware-readiness.is-warning {
+  color: #a16207;
+}
+
 .control-hardware-busy {
   color: var(--tx3);
   font-family: 'IBM Plex Mono', monospace;

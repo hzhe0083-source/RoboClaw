@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collectionApi, type Assignment, type CollectionStatus } from '@/domains/collection/api/collectionApi'
 import { assignmentProgressPct, formatHours, todayIso } from '@/domains/collection/lib/metrics'
-import { useHardwareStore, type OperationCapability } from '@/domains/hardware/store/useHardwareStore'
+import { useHardwareStore, type HardwareStatus, type OperationCapability } from '@/domains/hardware/store/useHardwareStore'
 import { useSessionStore, type SessionState, type SessionStatus } from '@/domains/session/store/useSessionStore'
 import { useI18n } from '@/i18n'
 import { ActionButton } from '@/shared/ui'
@@ -90,18 +90,21 @@ function DeviceDots({ label, dots }: {
 }
 
 function HardwareSummary({ hwStatus, busy, state, owner }: {
-  hwStatus: any
+  hwStatus: HardwareStatus | null
   busy: boolean
   state: string
   owner: string
 }) {
   const { t } = useI18n()
-  const armDots = hwStatus?.arms.map((arm: any) => ({
+  const hwReady = hwStatus?.ready ?? false
+  const warningCount = hwStatus?.missing.length ?? 0
+  const readinessText = hwReady ? t('hwReady') : `${warningCount} ${t('warnings')}`
+  const armDots = hwStatus?.arms.map((arm) => ({
     key: arm.alias,
     title: arm.alias,
     className: !arm.connected ? 'bg-rd' : !arm.calibrated ? 'bg-yl' : 'bg-gn',
   })) ?? []
-  const cameraDots = hwStatus?.cameras.map((camera: any) => ({
+  const cameraDots = hwStatus?.cameras.map((camera) => ({
     key: camera.alias,
     title: camera.alias,
     className: camera.connected ? 'bg-gn' : 'bg-rd',
@@ -111,7 +114,12 @@ function HardwareSummary({ hwStatus, busy, state, owner }: {
     <div className="control-hardware-summary">
       <DeviceDots label={t('arms')} dots={armDots} />
       <DeviceDots label={t('cameras')} dots={cameraDots} />
-      {busy && <div className="control-hardware-busy">{state}{owner ? ` · ${owner}` : ''}</div>}
+      <div className="control-hardware-state">
+        <div className={`control-hardware-readiness ${hwReady ? 'is-ready' : 'is-warning'}`}>
+          {readinessText}
+        </div>
+        {busy && <div className="control-hardware-busy">{state}{owner ? ` · ${owner}` : ''}</div>}
+      </div>
     </div>
   )
 }
