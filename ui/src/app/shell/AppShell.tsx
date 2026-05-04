@@ -9,6 +9,7 @@ import ChatPanel from '@/domains/chat/components/ChatPanel'
 import AppHeader from '@/app/shell/AppHeader'
 import ToastContainer from '@/app/shell/ToastOutlet'
 import { useAuthStore } from '@/shared/lib/authStore'
+import { canManageCollection } from '@/shared/api/evoClient'
 
 const NAV_ICONS: Record<string, JSX.Element> = {
   '/collection': (
@@ -160,9 +161,9 @@ export default function AppShell() {
     { path: '/settings', label: t('settings') },
     { path: '/logs', label: t('logs') },
   ]
-  const isSystemAdmin = user?.platform_role === 'system_admin'
+  const canPublishTasks = canManageCollection(user)
   const collectionChildren = [
-    ...(isSystemAdmin ? [{ path: '/collection/publish', label: '任务发布' }] : []),
+    ...(canPublishTasks ? [{ path: '/collection/publish', label: '管理平台' }] : []),
     { path: '/collection/control', label: '控制平台' },
     { path: '/collection/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
   ]

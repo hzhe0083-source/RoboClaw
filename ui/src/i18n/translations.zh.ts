@@ -646,5 +646,11 @@ export const inlineZh = {
         accountOverviewManage: '管理账号',
         accountOverviewLoggedIn: '已登录',
         accountOverviewNotLoggedIn: '未登录',
-        accountLevel: '平台角色',
+        accountLevel: '组织角色',
+        organizationName: '组织',
+        organizationRole: '角色',
+        organizationStatus: '状态',
+        organizationMemberPhone: '成员手机号',
+        organizationMemberAdd: '添加成员',
+        organizationMemberSaved: '成员权限已更新',
 } as const

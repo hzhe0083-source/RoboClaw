@@ -10,6 +10,7 @@ import {
 } from '@/domains/provider/api/providerApi'
 import { useSetup } from '@/domains/hardware/setup/store/useSetupStore'
 import { useAuthStore } from '@/shared/lib/authStore'
+import { currentMembershipRole, type MembershipRole } from '@/shared/api/evoClient'
 
 function HardwareIcon() {
     return (
@@ -49,6 +50,13 @@ function AccountIcon() {
             <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
         </svg>
     )
+}
+
+function roleText(role: MembershipRole | null): string {
+    if (role === 'owner') return 'Owner'
+    if (role === 'admin') return 'Admin'
+    if (role === 'member') return 'Member'
+    return '—'
 }
 
 export default function SettingsOverviewPage() {
@@ -91,6 +99,7 @@ export default function SettingsOverviewPage() {
         : hubEndpointMode === 'mirror'
             ? t('hfMirror')
             : t('hfCustomEndpoint')
+    const orgRole = currentMembershipRole(user)
 
     return (
         <SettingsPageFrame
@@ -154,7 +163,7 @@ export default function SettingsOverviewPage() {
                     metrics={[
                         { label: t('accountPhone'), value: user ? `${user.phone.slice(0, 3)}****${user.phone.slice(7)}` : '—' },
                         { label: t('accountNickname'), value: user?.nickname || t('accountNicknameNotSet') },
-                        { label: t('accountLevel'), value: user ? (user.platform_role === 'system_admin' ? t('authUserAdmin') : t('authUserNormal')) : '—' },
+                        { label: t('accountLevel'), value: roleText(orgRole) },
                     ]}
                 />
             </div>

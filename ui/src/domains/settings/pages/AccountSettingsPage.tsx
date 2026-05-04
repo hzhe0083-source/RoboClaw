@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SettingsPageFrame from '@/domains/settings/components/SettingsPageFrame'
 import { useAuthStore } from '@/shared/lib/authStore'
-import { evoApi } from '@/shared/api/evoClient'
+import { currentMembershipRole, evoApi } from '@/shared/api/evoClient'
 import { useI18n } from '@/i18n'
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
@@ -550,19 +550,26 @@ export default function AccountSettingsPage() {
     const maskPhone = (phone: string) =>
         phone.length >= 11 ? `${phone.slice(0, 3)}****${phone.slice(7)}` : phone
 
-    const roleLabel = user
-        ? user.platform_role === 'system_admin'
-            ? t('authUserAdmin')
-            : t('authUserNormal')
-        : ''
+    const membershipRole = currentMembershipRole(user)
+    const roleLabel = membershipRole === 'owner'
+        ? 'Owner'
+        : membershipRole === 'admin'
+            ? 'Admin'
+            : membershipRole === 'member'
+                ? 'Member'
+                : t('settingsNotConfigured')
 
-    const roleColor = user?.platform_role === 'system_admin'
+    const roleColor = membershipRole === 'owner'
         ? 'rgba(234,179,8,0.15)'
-        : 'rgba(100,116,139,0.12)'
+        : membershipRole === 'admin'
+            ? 'rgba(47,111,228,0.14)'
+            : 'rgba(100,116,139,0.12)'
 
-    const roleTextColor = user?.platform_role === 'system_admin'
+    const roleTextColor = membershipRole === 'owner'
         ? '#b45309'
-        : 'var(--tx2)'
+        : membershipRole === 'admin'
+            ? 'var(--ac)'
+            : 'var(--tx2)'
 
     if (!user) {
         return (

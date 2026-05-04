@@ -5,6 +5,7 @@ import { useHardwareStore } from '@/domains/hardware/store/useHardwareStore'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/shared/lib/authStore'
 import { StatusPill } from '@/shared/ui'
+import { currentMembershipRole, type MembershipRole } from '@/shared/api/evoClient'
 
 /** 手机号脱敏：138****8888 */
 function maskPhone(phone: string): string {
@@ -12,9 +13,9 @@ function maskPhone(phone: string): string {
     return `${phone.slice(0, 3)}****${phone.slice(7)}`
 }
 
-/** 平台角色徽标颜色 */
-function roleColor(role: string): string {
-    if (role === 'system_admin') return '#d97706'
+function roleColor(role: MembershipRole | null): string {
+    if (role === 'owner') return '#d97706'
+    if (role === 'admin') return '#2563eb'
     return '#6b7a8d'
 }
 
@@ -25,6 +26,7 @@ export default function AppHeader() {
     const fetchNetworkInfo = useHardwareStore((state) => state.fetchNetworkInfo)
     const { t, locale, setLocale } = useI18n()
     const { user, isLoggedIn, isChecking, logout } = useAuthStore()
+    const role = currentMembershipRole(user)
 
     useEffect(() => {
         void fetchNetworkInfo()
@@ -59,7 +61,7 @@ export default function AppHeader() {
                             <div className="header-user-badge" title={maskPhone(user.phone)}>
                                 <div
                                     className="header-user-badge__avatar"
-                                    style={{ background: `linear-gradient(180deg, ${roleColor(user.platform_role)}cc, ${roleColor(user.platform_role)})` }}
+                                    style={{ background: `linear-gradient(180deg, ${roleColor(role)}cc, ${roleColor(role)})` }}
                                 >
                                     {avatarInitial}
                                 </div>

@@ -645,5 +645,11 @@ export const inlineEn = {
         accountOverviewManage: 'Manage Account',
         accountOverviewLoggedIn: 'Signed In',
         accountOverviewNotLoggedIn: 'Not Signed In',
-        accountLevel: 'Platform Role',
+        accountLevel: 'Organization Role',
+        organizationName: 'Organization',
+        organizationRole: 'Role',
+        organizationStatus: 'Status',
+        organizationMemberPhone: 'Member phone',
+        organizationMemberAdd: 'Add Member',
+        organizationMemberSaved: 'Member access updated',
 } as const
