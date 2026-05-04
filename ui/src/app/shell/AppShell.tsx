@@ -160,8 +160,9 @@ export default function AppShell() {
     { path: '/settings', label: t('settings') },
     { path: '/logs', label: t('logs') },
   ]
+  const isSystemAdmin = user?.platform_role === 'system_admin'
   const collectionChildren = [
-    ...(user?.level === 'admin' ? [{ path: '/collection/publish', label: '任务发布' }] : []),
+    ...(isSystemAdmin ? [{ path: '/collection/publish', label: '任务发布' }] : []),
     { path: '/collection/control', label: '控制平台' },
     { path: '/collection/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
   ]

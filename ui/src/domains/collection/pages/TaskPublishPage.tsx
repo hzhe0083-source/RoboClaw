@@ -164,7 +164,7 @@ export default function TaskPublishPage() {
   }
 
   useEffect(() => {
-    if (!isLoggedIn || user?.level !== 'admin') return
+    if (!isLoggedIn || user?.platform_role !== 'system_admin') return
     let cancelled = false
     async function load() {
       try {
@@ -180,7 +180,7 @@ export default function TaskPublishPage() {
     return () => {
       cancelled = true
     }
-  }, [isLoggedIn, progressDate, user?.level])
+  }, [isLoggedIn, progressDate, user?.platform_role])
 
   useEffect(() => () => clearTrashReadyTimer(), [])
 
@@ -493,7 +493,7 @@ export default function TaskPublishPage() {
     return <div className="collection-page"><div className="collection-empty">Checking account...</div></div>
   }
 
-  if (!isLoggedIn || user?.level !== 'admin') {
+  if (!isLoggedIn || user?.platform_role !== 'system_admin') {
     return <Navigate to="/collection/control" replace />
   }
 

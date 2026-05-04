@@ -30,8 +30,8 @@ export interface UserInfo {
     id: string
     phone: string
     nickname: string | null
-    level: 'normal' | 'contributor' | 'admin'
-    rank: number
+    status: 'active' | 'disabled'
+    platform_role: 'user' | 'system_admin'
     has_password: boolean
     created_at: string
 }

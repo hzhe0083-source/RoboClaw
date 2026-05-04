@@ -12,10 +12,9 @@ function maskPhone(phone: string): string {
     return `${phone.slice(0, 3)}****${phone.slice(7)}`
 }
 
-/** 用户等级徽标颜色 */
-function levelColor(level: string): string {
-    if (level === 'admin') return '#d97706'
-    if (level === 'contributor') return '#2f6fe4'
+/** 平台角色徽标颜色 */
+function roleColor(role: string): string {
+    if (role === 'system_admin') return '#d97706'
     return '#6b7a8d'
 }
 
@@ -60,7 +59,7 @@ export default function AppHeader() {
                             <div className="header-user-badge" title={maskPhone(user.phone)}>
                                 <div
                                     className="header-user-badge__avatar"
-                                    style={{ background: `linear-gradient(180deg, ${levelColor(user.level)}cc, ${levelColor(user.level)})` }}
+                                    style={{ background: `linear-gradient(180deg, ${roleColor(user.platform_role)}cc, ${roleColor(user.platform_role)})` }}
                                 >
                                     {avatarInitial}
                                 </div>

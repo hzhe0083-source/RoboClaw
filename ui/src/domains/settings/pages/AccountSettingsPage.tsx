@@ -550,25 +550,19 @@ export default function AccountSettingsPage() {
     const maskPhone = (phone: string) =>
         phone.length >= 11 ? `${phone.slice(0, 3)}****${phone.slice(7)}` : phone
 
-    const levelLabel = user
-        ? user.level === 'admin'
+    const roleLabel = user
+        ? user.platform_role === 'system_admin'
             ? t('authUserAdmin')
-            : user.level === 'contributor'
-                ? t('authUserContributor')
-                : t('authUserNormal')
+            : t('authUserNormal')
         : ''
 
-    const levelColor = user?.level === 'admin'
+    const roleColor = user?.platform_role === 'system_admin'
         ? 'rgba(234,179,8,0.15)'
-        : user?.level === 'contributor'
-            ? 'rgba(59,130,246,0.12)'
-            : 'rgba(100,116,139,0.12)'
+        : 'rgba(100,116,139,0.12)'
 
-    const levelTextColor = user?.level === 'admin'
+    const roleTextColor = user?.platform_role === 'system_admin'
         ? '#b45309'
-        : user?.level === 'contributor'
-            ? '#2563eb'
-            : 'var(--tx2)'
+        : 'var(--tx2)'
 
     if (!user) {
         return (
@@ -605,7 +599,7 @@ export default function AccountSettingsPage() {
                 <div className="glass-panel px-5 py-4 flex items-center gap-4">
                     <div
                         className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold select-none shrink-0"
-                        style={{ background: levelColor, color: levelTextColor }}
+                        style={{ background: roleColor, color: roleTextColor }}
                     >
                         {user.phone.slice(0, 1)}
                     </div>
@@ -616,9 +610,9 @@ export default function AccountSettingsPage() {
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span
                                 className="text-xs px-2 py-0.5 rounded-full font-medium"
-                                style={{ background: levelColor, color: levelTextColor }}
+                                style={{ background: roleColor, color: roleTextColor }}
                             >
-                                {levelLabel}
+                                {roleLabel}
                             </span>
                             {user.nickname && (
                                 <span className="text-xs text-[color:var(--tx2)] truncate">{user.nickname}</span>
