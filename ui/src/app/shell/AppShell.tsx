@@ -89,6 +89,17 @@ interface NavItem {
   badge?: number
 }
 
+type NavGroupId = 'collection' | 'pipeline'
+
+interface NavGroup {
+  id: NavGroupId
+  rootPath: string
+  collapsedPath: string
+  iconPath: string
+  label: string
+  children: NavItem[]
+}
+
 export default function AppShell() {
   const location = useLocation()
   const { connect, disconnect, connected, messages } = useChatSocket()
@@ -100,7 +111,7 @@ export default function AppShell() {
   const [compactNav, setCompactNav] = useState(() => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
   ))
-  const [openCompactGroup, setOpenCompactGroup] = useState<'collection' | 'pipeline' | null>(null)
+  const [openCompactGroup, setOpenCompactGroup] = useState<NavGroupId | null>(null)
   const [collectionExpanded, setCollectionExpanded] = useState(
     location.pathname.startsWith('/collection'),
   )
@@ -154,7 +165,6 @@ export default function AppShell() {
     { path: '/collection/control', label: '控制平台' },
     { path: '/collection/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
   ]
-  const collectionActive = location.pathname.startsWith('/collection')
   const pipelineChildren = [
     { path: '/curation/workshop', label: t('dataWorkshop') },
     { path: '/curation/datasets', label: t('datasetReader') },
@@ -162,15 +172,33 @@ export default function AppShell() {
     { path: '/curation/text-alignment', label: t('textAlignment') },
     { path: '/curation/data-overview', label: t('dataOverview') },
   ]
-  const pipelineActive = location.pathname.startsWith('/curation')
-  const showCollectionChildren = compactNav
-    ? openCompactGroup === 'collection'
-    : collectionExpanded
-  const showPipelineChildren = compactNav
-    ? openCompactGroup === 'pipeline'
-    : pipelineExpanded
+  const navGroups: NavGroup[] = [
+    {
+      id: 'collection',
+      rootPath: '/collection',
+      collapsedPath: '/collection/control',
+      iconPath: '/collection',
+      label: '采集中心',
+      children: collectionChildren,
+    },
+    {
+      id: 'pipeline',
+      rootPath: '/curation',
+      collapsedPath: '/curation',
+      iconPath: '/curation',
+      label: t('pipelineNav'),
+      children: pipelineChildren,
+    },
+  ]
 
-  function toggleNavGroup(group: 'collection' | 'pipeline') {
+  function isNavGroupExpanded(group: NavGroupId): boolean {
+    if (compactNav) {
+      return openCompactGroup === group
+    }
+    return group === 'collection' ? collectionExpanded : pipelineExpanded
+  }
+
+  function toggleNavGroup(group: NavGroupId) {
     if (compactNav) {
       setOpenCompactGroup((current) => (current === group ? null : group))
       return
@@ -248,6 +276,95 @@ export default function AppShell() {
     )
   }
 
+  const renderNavGroup = (group: NavGroup) => {
+    const active = location.pathname.startsWith(group.rootPath)
+    const expanded = isNavGroupExpanded(group.id)
+
+    if (sidebarCollapsed) {
+      return (
+        <Link
+          key={group.id}
+          to={group.collapsedPath}
+          className={cn('app-sidebar__link', active && 'app-sidebar__link--active')}
+          title={group.label}
+        >
+          <span className="app-sidebar__link-icon">
+            {NAV_ICONS[group.iconPath]}
+          </span>
+        </Link>
+      )
+    }
+
+    return (
+      <div key={group.id} className="app-sidebar__group">
+        <button
+          type="button"
+          className={cn(
+            'app-sidebar__link',
+            'app-sidebar__group-trigger',
+            active && 'app-sidebar__link--active',
+          )}
+          onClick={() => toggleNavGroup(group.id)}
+          aria-expanded={expanded}
+        >
+          <span className="app-sidebar__link-icon">
+            {NAV_ICONS[group.iconPath]}
+          </span>
+          <span className="app-sidebar__link-label">{group.label}</span>
+          <span
+            className={cn(
+              'app-sidebar__caret',
+              expanded && 'app-sidebar__caret--expanded',
+            )}
+            aria-hidden="true"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </span>
+        </button>
+
+        {expanded && (
+          <div className="app-sidebar__children">
+            {group.children.map((child) => {
+              const childActive =
+                location.pathname === child.path
+                || location.pathname.startsWith(`${child.path}/`)
+              return (
+                <Link
+                  key={child.path}
+                  to={child.path}
+                  onClick={closeCompactNavGroup}
+                  className={cn(
+                    'app-sidebar__child-link',
+                    childActive && 'app-sidebar__child-link--active',
+                  )}
+                >
+                  <span className="app-sidebar__child-dot" aria-hidden="true" />
+                  <span className="app-sidebar__child-label">{child.label}</span>
+                  {child.badge && (
+                    <span className="ml-auto rounded-full bg-rd/10 px-1.5 py-0.5 text-[11px] font-bold text-rd">
+                      {child.badge}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="app-shell">
       <aside
@@ -273,160 +390,11 @@ export default function AppShell() {
         </div>
 
         <nav className="app-sidebar__nav">
-          {sidebarCollapsed ? (
-            <Link
-              to="/collection/control"
-              className={cn('app-sidebar__link', collectionActive && 'app-sidebar__link--active')}
-              title="采集中心"
-            >
-              <span className="app-sidebar__link-icon">
-                {NAV_ICONS['/collection']}
-              </span>
-            </Link>
-          ) : (
-            <div className="app-sidebar__group">
-              <button
-                type="button"
-                className={cn(
-                  'app-sidebar__link',
-                  'app-sidebar__group-trigger',
-                  collectionActive && 'app-sidebar__link--active',
-                )}
-                onClick={() => toggleNavGroup('collection')}
-                aria-expanded={showCollectionChildren}
-              >
-                <span className="app-sidebar__link-icon">
-                  {NAV_ICONS['/collection']}
-                </span>
-                <span className="app-sidebar__link-label">采集中心</span>
-                <span
-                  className={cn(
-                    'app-sidebar__caret',
-                    showCollectionChildren && 'app-sidebar__caret--expanded',
-                  )}
-                  aria-hidden="true"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </button>
-
-              {showCollectionChildren && (
-                <div className="app-sidebar__children">
-                  {collectionChildren.map((child) => {
-                    const active =
-                      location.pathname === child.path
-                      || location.pathname.startsWith(`${child.path}/`)
-                    return (
-                      <Link
-                        key={child.path}
-                        to={child.path}
-                        onClick={closeCompactNavGroup}
-                        className={cn(
-                          'app-sidebar__child-link',
-                          active && 'app-sidebar__child-link--active',
-                        )}
-                      >
-                        <span className="app-sidebar__child-dot" aria-hidden="true" />
-                        <span className="app-sidebar__child-label">{child.label}</span>
-                        {child.badge && (
-                          <span className="ml-auto rounded-full bg-rd/10 px-1.5 py-0.5 text-[11px] font-bold text-rd">
-                            {child.badge}
-                          </span>
-                        )}
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          {renderNavGroup(navGroups[0])}
 
           {navItemsBeforePipeline.map(renderNavItem)}
 
-          {sidebarCollapsed ? (
-            <Link
-              to="/curation"
-              className={cn('app-sidebar__link', pipelineActive && 'app-sidebar__link--active')}
-              title={t('pipelineNav')}
-            >
-              <span className="app-sidebar__link-icon">
-                {NAV_ICONS['/curation']}
-              </span>
-            </Link>
-          ) : (
-            <div className="app-sidebar__group">
-              <button
-                type="button"
-                className={cn(
-                  'app-sidebar__link',
-                  'app-sidebar__group-trigger',
-                  pipelineActive && 'app-sidebar__link--active',
-                )}
-                onClick={() => toggleNavGroup('pipeline')}
-                aria-expanded={showPipelineChildren}
-              >
-                <span className="app-sidebar__link-icon">
-                  {NAV_ICONS['/curation']}
-                </span>
-                <span className="app-sidebar__link-label">{t('pipelineNav')}</span>
-                <span
-                  className={cn(
-                    'app-sidebar__caret',
-                    showPipelineChildren && 'app-sidebar__caret--expanded',
-                  )}
-                  aria-hidden="true"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </button>
-
-              {showPipelineChildren && (
-                <div className="app-sidebar__children">
-                  {pipelineChildren.map((child) => {
-                    const active =
-                      location.pathname === child.path
-                      || location.pathname.startsWith(`${child.path}/`)
-                    return (
-                      <Link
-                        key={child.path}
-                        to={child.path}
-                        onClick={closeCompactNavGroup}
-                        className={cn(
-                          'app-sidebar__child-link',
-                          active && 'app-sidebar__child-link--active',
-                        )}
-                      >
-                        <span className="app-sidebar__child-dot" aria-hidden="true" />
-                        <span className="app-sidebar__child-label">{child.label}</span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          {renderNavGroup(navGroups[1])}
 
           {navItemsAfterPipeline.map(renderNavItem)}
         </nav>

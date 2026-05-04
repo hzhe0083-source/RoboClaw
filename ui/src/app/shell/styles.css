@@ -1083,13 +1083,7 @@
   .app-sidebar {
     position: sticky;
     top: 0;
-    z-index: 100;
-    width: 100%;
-    flex-direction: row;
-    align-items: center;
     gap: 16px;
-    overflow: visible;
-    padding: 12px 14px;
     background: rgba(255, 255, 255, 0.82);
     backdrop-filter: blur(18px);
   }
@@ -1104,24 +1098,10 @@
     width: auto;
   }
 
-  .app-sidebar__brand {
-    font-size: 25px;
-  }
-
   .app-sidebar__nav {
-    display: flex;
     flex: 1 1 auto;
     min-width: 0;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    gap: 2px;
-    overflow-x: auto;
     padding-bottom: 0;
-    scrollbar-width: none;
-  }
-
-  .app-sidebar__nav::-webkit-scrollbar {
-    display: none;
   }
 
   .app-sidebar__group {
@@ -1137,22 +1117,9 @@
   }
 
   .app-sidebar__children {
-    flex-direction: column;
     gap: 6px;
-    margin-left: 0;
-    overflow-x: visible;
-    border-left: 0;
-    padding-left: 0;
-    scrollbar-width: none;
     width: min(220px, calc(100vw - 24px));
-    max-width: calc(100vw - 24px);
     min-width: 0;
-    border: 1px solid rgba(47, 111, 228, 0.14);
-    padding: 8px;
-  }
-
-  .app-sidebar__children::-webkit-scrollbar {
-    display: none;
   }
 
   .app-sidebar__child-link {

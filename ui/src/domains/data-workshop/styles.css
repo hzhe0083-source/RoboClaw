@@ -217,7 +217,8 @@
 }
 
 .data-workshop-column__pager select,
-.data-workshop-page-picker button {
+.data-workshop-page-picker button,
+.data-workshop-page-input {
   height: 30px;
   border: 1px solid rgba(43, 56, 78, 0.14);
   border-radius: 8px;
@@ -233,6 +234,11 @@
 
 .data-workshop-page-picker button {
   padding: 0 9px;
+}
+
+.data-workshop-page-input {
+  width: 54px;
+  padding: 0 8px;
 }
 
 .data-workshop-page-picker button:disabled {

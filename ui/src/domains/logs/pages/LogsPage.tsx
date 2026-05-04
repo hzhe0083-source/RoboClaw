@@ -11,13 +11,20 @@ type LogGroup =
   | { kind: 'error'; entry: LogEntry }
   | { kind: 'normal'; entries: LogEntry[] }
 
+interface LogSummary {
+  groups: LogGroup[]
+  errorCount: number
+}
+
+const ERROR_LOG_PATTERN = /traceback|exception|error|failed|failure|fatal|critical/i
+
 export default function LogView() {
   const { t } = useI18n()
   const [logs, setLogs] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const logRef = useRef<HTMLDivElement>(null)
-  const logGroups = useMemo(() => buildLogGroups(logs), [logs])
-  const errorCount = useMemo(() => logs.filter(isErrorLine).length, [logs])
+  const logSummary = useMemo(() => buildLogSummary(logs), [logs])
+  const errorCount = logSummary.errorCount
   const foldedCount = logs.length - errorCount
 
   useEffect(() => {
@@ -86,10 +93,10 @@ export default function LogView() {
           <div className="text-tx3 text-center py-12 text-sm">Loading logs...</div>
         )}
         <div className="space-y-2">
-          {logGroups.map((group) => (
+          {logSummary.groups.map((group) => (
             group.kind === 'error'
               ? <ErrorLogLine key={`error-${group.entry.lineNumber}-${group.entry.line.slice(0, 24)}`} entry={group.entry} />
-              : <NormalLogGroup key={`normal-${group.entries[0]?.lineNumber}-${group.entries.length}`} entries={group.entries} />
+              : <NormalLogGroup key={`normal-${group.entries[0]?.lineNumber}`} entries={group.entries} />
           ))}
         </div>
       </div>
@@ -98,12 +105,13 @@ export default function LogView() {
 }
 
 function isErrorLine(line: string): boolean {
-  return /traceback|exception|error|failed|failure|fatal|critical/i.test(line)
+  return ERROR_LOG_PATTERN.test(line)
 }
 
-function buildLogGroups(lines: string[]): LogGroup[] {
+function buildLogSummary(lines: string[]): LogSummary {
   const groups: LogGroup[] = []
   let normalEntries: LogEntry[] = []
+  let errorCount = 0
 
   function flushNormalEntries(): void {
     if (normalEntries.length === 0) return
@@ -117,11 +125,12 @@ function buildLogGroups(lines: string[]): LogGroup[] {
       normalEntries.push(entry)
       return
     }
+    errorCount += 1
     flushNormalEntries()
     groups.push({ kind: 'error', entry })
   })
   flushNormalEntries()
-  return groups
+  return { groups, errorCount }
 }
 
 function ErrorLogLine({ entry }: { entry: LogEntry }) {
@@ -137,11 +146,15 @@ function ErrorLogLine({ entry }: { entry: LogEntry }) {
 }
 
 function NormalLogGroup({ entries }: { entries: LogEntry[] }) {
+  const [expanded, setExpanded] = useState(false)
   const first = entries[0]
   const last = entries[entries.length - 1]
   const preview = last?.line || ''
   return (
-    <details className="rounded-lg border border-bd/50 bg-white/70">
+    <details
+      className="rounded-lg border border-bd/50 bg-white/70"
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
       <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2 text-xs font-bold text-tx2">
         <span>非报错日志 {entries.length} 条</span>
         <span className="text-tx3">
@@ -150,14 +163,16 @@ function NormalLogGroup({ entries }: { entries: LogEntry[] }) {
         <span className="min-w-0 flex-1 truncate text-tx3">{preview}</span>
         <span className="text-ac">展开</span>
       </summary>
-      <div className="border-t border-bd/40 px-3 py-2">
-        {entries.map((entry) => (
-          <div key={`${entry.lineNumber}-${entry.line.slice(0, 24)}`} className="py-1 text-tx3">
-            <span className="mr-3 text-xs text-tx3/50">{String(entry.lineNumber).padStart(4, '0')}</span>
-            <span className="whitespace-pre-wrap break-words">{entry.line}</span>
-          </div>
-        ))}
-      </div>
+      {expanded && (
+        <div className="border-t border-bd/40 px-3 py-2">
+          {entries.map((entry) => (
+            <div key={`${entry.lineNumber}-${entry.line.slice(0, 24)}`} className="py-1 text-tx3">
+              <span className="mr-3 text-xs text-tx3/50">{String(entry.lineNumber).padStart(4, '0')}</span>
+              <span className="whitespace-pre-wrap break-words">{entry.line}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </details>
   )
 }

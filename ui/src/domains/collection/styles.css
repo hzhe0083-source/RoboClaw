@@ -1051,7 +1051,6 @@ button.collection-task-card:disabled {
     .collection-active,
     .collection-publish-stage,
     .collection-panel__head,
-    .collection-progress-row,
     .collection-progress-edit__grid {
         grid-template-columns: 1fr;
     }
@@ -1071,11 +1070,6 @@ button.collection-task-card:disabled {
 
     .collection-panel__head--progress {
         grid-template-columns: minmax(0, 1fr) auto;
-    }
-
-    .collection-progress-filters .collection-input--date {
-        flex: 0 0 168px;
-        width: 168px;
     }
 
     .collection-mode-tabs {
