@@ -154,7 +154,7 @@ export default function SettingsOverviewPage() {
                     metrics={[
                         { label: t('accountPhone'), value: user ? `${user.phone.slice(0, 3)}****${user.phone.slice(7)}` : '—' },
                         { label: t('accountNickname'), value: user?.nickname || t('accountNicknameNotSet') },
-                        { label: t('accountLevel'), value: user ? (user.level === 'admin' ? t('authUserAdmin') : user.level === 'contributor' ? t('authUserContributor') : t('authUserNormal')) : '—' },
+                        { label: t('accountLevel'), value: user ? (user.platform_role === 'system_admin' ? t('authUserAdmin') : t('authUserNormal')) : '—' },
                     ]}
                 />
             </div>

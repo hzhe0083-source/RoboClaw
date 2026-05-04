@@ -645,5 +645,5 @@ export const inlineEn = {
         accountOverviewManage: 'Manage Account',
         accountOverviewLoggedIn: 'Signed In',
         accountOverviewNotLoggedIn: 'Not Signed In',
-        accountLevel: 'Level',
+        accountLevel: 'Platform Role',
 } as const
