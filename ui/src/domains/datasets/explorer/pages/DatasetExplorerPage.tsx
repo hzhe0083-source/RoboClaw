@@ -18,10 +18,31 @@ import { DatasetInsightStack } from '../components/DatasetInsightStack'
 import { EpisodeBrowser } from '../components/EpisodeBrowser'
 import { FeatureStatsTable, ModalityChips, TypeDistribution } from '../components/ExplorerSummaryBlocks'
 
+function mergeDatasetSuggestions(
+  current: DatasetSuggestion[],
+  incoming: DatasetSuggestion[],
+): DatasetSuggestion[] {
+  const byId = new Map<string, DatasetSuggestion>()
+  incoming.forEach((item) => byId.set(item.id, item))
+  current.forEach((item) => {
+    if (!byId.has(item.id)) {
+      byId.set(item.id, item)
+    }
+  })
+  return Array.from(byId.values())
+}
+
+function formatPreparedLocalPathStatus(displayName: string, datasetCount: number): string {
+  if (datasetCount <= 1) {
+    return displayName
+  }
+  return `${displayName} - ${datasetCount} datasets found`
+}
+
 export default function DatasetExplorerView() {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const { prepareRemoteDatasetForWorkflow, createLocalDirectorySession } = useWorkflow()
+  const { prepareRemoteDatasetForWorkflow, createLocalDirectorySession, createLocalPathSession } = useWorkflow()
   const {
     summary,
     summaryRefKey,
@@ -250,9 +271,9 @@ export default function DatasetExplorerView() {
         ? datasetIdInput
         : nextSource === 'local'
           ? localDatasetInput
-          : currentDataset)
+          : localPathDatasetLabel)
     const nextPath = override?.path ?? (nextSource === 'path' ? localDatasetPathInput : undefined)
-    const nextRef: ExplorerDatasetRef = {
+    let nextRef: ExplorerDatasetRef = {
       source: nextSource,
       dataset: nextDataset?.trim() || undefined,
       path: nextPath?.trim() || undefined,
@@ -260,16 +281,47 @@ export default function DatasetExplorerView() {
     if (!nextRef.dataset && !nextRef.path) {
       return
     }
+    if (nextSource === 'path' && nextRef.path && !override?.datasetOverride) {
+      setPageState({
+        prepareStatus: t('preparingLocalPath'),
+        prepareError: '',
+      })
+      const payload = await createLocalPathSession(nextRef.path, nextRef.dataset)
+      const preparedDatasets = payload.datasets ?? []
+      if (preparedDatasets.length > 0) {
+        setLocalDatasets((items) => mergeDatasetSuggestions(items, preparedDatasets))
+      }
+      const selectedDataset = preparedDatasets.length === 1
+        ? preparedDatasets[0].id
+        : ''
+      setPageState({
+        source: 'local',
+        localDatasetInput: selectedDataset,
+        localDatasetPathInput: payload.local_path,
+        localDatasetPathSelected: payload.local_path,
+        localPathDatasetLabel: selectedDataset,
+        prepareStatus: formatPreparedLocalPathStatus(payload.display_name, preparedDatasets.length),
+      })
+      if (selectedDataset) {
+        nextRef = {
+          source: 'local',
+          dataset: selectedDataset,
+        }
+      } else {
+        setActiveDatasetRef(null)
+        return
+      }
+    }
     if (nextSource === 'remote' && nextRef.dataset) {
       setPageState({
         datasetIdInput: nextRef.dataset,
         remoteDatasetSelected: nextRef.dataset,
       })
     }
-    if (nextSource === 'local' && nextRef.dataset) {
+    if (nextRef.source === 'local' && nextRef.dataset) {
       setPageState({ localDatasetInput: nextRef.dataset })
     }
-    if (nextSource === 'path' && nextRef.path) {
+    if (nextRef.source === 'path' && nextRef.path) {
       setPageState({
         localDatasetPathInput: nextRef.path,
         localDatasetPathSelected: nextRef.path,
@@ -398,11 +450,12 @@ export default function DatasetExplorerView() {
         localDatasetPathInput: payload.local_path,
         localDatasetPathSelected: payload.local_path,
         localPathDatasetLabel: payload.dataset_name,
+        localDatasetInput: payload.dataset_name,
         prepareStatus: payload.display_name,
       })
       await handleLoad({
-        source: 'path',
-        path: payload.local_path,
+        source: 'local',
+        dataset: payload.dataset_name,
         datasetOverride: payload.dataset_name,
       })
     } catch (error) {
@@ -552,8 +605,9 @@ export default function DatasetExplorerView() {
                   variant="secondary"
                   onClick={() => localDirectoryInputRef.current?.click()}
                   className="dataset-workbench__import-btn"
+                  title={t('chooseLocalDirectoryUploadHint')}
                 >
-                  {t('chooseLocalDirectory')}
+                  {t('chooseLocalDirectoryUpload')}
                 </ActionButton>
                 <input
                   className="dataset-workbench__input"

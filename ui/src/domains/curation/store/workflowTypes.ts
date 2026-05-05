@@ -197,6 +197,19 @@ export interface LocalDirectorySessionResult {
   display_name: string
   local_path: string
 }
+
+export interface LocalPathSessionResult {
+  dataset_name: string
+  display_name: string
+  local_path: string
+  datasets?: Array<{
+    id: string
+    label: string
+    path: string
+    source: 'local'
+    source_kind: string
+  }>
+}
 export interface AnnotationItem {
   id: string
   label: string
@@ -381,6 +394,10 @@ export interface WorkflowStore {
     relativePaths: string[],
     displayName?: string,
   ) => Promise<LocalDirectorySessionResult>
+  createLocalPathSession: (
+    path: string,
+    displayName?: string,
+  ) => Promise<LocalPathSessionResult>
   toggleValidator: (name: string) => void
   setAlignmentSourceMode: (mode: AlignmentSourceMode) => void
   setAlignmentQualityFilter: (mode: QualityFilterMode) => void

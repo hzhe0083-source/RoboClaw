@@ -24,6 +24,7 @@ from roboclaw.data.curation.features import (
 )
 from roboclaw.data.curation.paths import datasets_root
 from roboclaw.data.dataset_sessions import (
+    create_local_path_session,
     create_uploaded_directory_session,
     register_remote_dataset_session,
 )
@@ -56,6 +57,11 @@ class ExplorerPrepareRequest(BaseModel):
     dataset_id: str
     include_videos: bool = False
     force: bool = False
+
+
+class ExplorerLocalPathSessionRequest(BaseModel):
+    path: str
+    display_name: str | None = None
 
 
 T = TypeVar("T")
@@ -264,6 +270,7 @@ def _build_local_episode_payload(
     duration_s = max(end_ts - start_ts, 0.0) if start_ts is not None and end_ts is not None else 0.0
 
     videos: list[dict[str, Any]] = []
+    dataset_ref = data.get("dataset_ref", dataset_name)
     for video_path in data.get("video_files", []):
         relative_path = video_path.relative_to(dataset_path).as_posix()
         if source == "path":
@@ -274,7 +281,7 @@ def _build_local_episode_payload(
         else:
             url = (
                 f"/api/explorer/local-video/{relative_path}"
-                f"?source=local&dataset={quote(dataset_name, safe='')}"
+                f"?source=local&dataset={quote(str(dataset_ref), safe='')}"
             )
         videos.append({
             "path": relative_path,
@@ -318,7 +325,7 @@ def _resolve_dataset_context(
                 detail="Local explorer requests require a local dataset name",
             )
         dataset_path = resolve_local_dataset_path(dataset.strip())
-        return resolved_source, _local_dataset_name(dataset_path), dataset_path
+        return resolved_source, dataset.strip(), dataset_path
 
     if not path or not path.strip():
         raise HTTPException(
@@ -595,6 +602,19 @@ def register_explorer_routes(app: FastAPI) -> None:
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         logger.info("Explorer created local directory session '{}'", payload["dataset_name"])
+        return payload
+
+    @app.post("/api/explorer/local-path-session")
+    async def explorer_local_path_session(body: ExplorerLocalPathSessionRequest) -> dict[str, Any]:
+        try:
+            payload = await asyncio.to_thread(
+                create_local_path_session,
+                path=body.path,
+                display_name=body.display_name,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.info("Explorer created local path session '{}'", payload["dataset_name"])
         return payload
 
     @app.get("/api/explorer/local-video/{path:path}")
