@@ -186,6 +186,7 @@ export default function AppShell() {
   const pipelineChildren = [
     { path: '/curation/workshop', label: t('dataWorkshop') },
     { path: '/curation/datasets', label: t('datasetReader') },
+    { path: '/curation/dataset-clean', label: t('datasetRepair') },
     { path: '/curation/quality', label: t('qualityWorkbench') },
     { path: '/curation/text-alignment', label: t('textAlignment') },
     { path: '/curation/data-overview', label: t('dataOverview') },

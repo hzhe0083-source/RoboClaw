@@ -7,6 +7,7 @@ export const inlineEn = {
         recoveryNav: 'Recovery',
         datasetReader: 'Dataset Loading',
         datasetExplorer: 'Explorer',
+        datasetRepair: 'Dataset Cleaning',
         dataWorkshop: 'Data Workshop',
         qualityWorkbench: 'Quality',
         workflow: 'Workflow',
