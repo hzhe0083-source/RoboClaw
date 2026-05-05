@@ -63,6 +63,7 @@ def register_all_routes(
         DatasetRepairCoordinator(
             service.datasets.root / "local",
             cleaned_root=service.datasets.root / "cleaned",
+            log_sink=service.board.log,
         ),
     )
     register_explorer_routes(app)

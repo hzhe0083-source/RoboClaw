@@ -36,6 +36,7 @@ IN_PLACE_DAMAGE_TYPES = {
     DamageType.META_STALE,
     DamageType.FRAME_MISMATCH,
     DamageType.MISSING_CP,
+    DamageType.PARTIAL_TMP_VIDEOS_STUCK,
 }
 
 
@@ -197,11 +198,7 @@ class DatasetRepairService:
 
         if damage in IN_PLACE_DAMAGE_TYPES:
             shutil.copytree(dataset_dir, output_dir)
-            # Drop any source repair_status.json that came along — the cleaned
-            # artifact must not inherit the source's dirty/checked state.
-            stale_status = output_dir / "meta" / "repair_status.json"
-            if stale_status.exists():
-                stale_status.unlink()
+            self._scrub_cleaned(output_dir)
 
         result = self._dispatch_repair(
             diagnosis,
@@ -242,6 +239,8 @@ class DatasetRepairService:
                 task=task,
                 output_dir=output_dir,
             )
+        elif damage == DamageType.PARTIAL_TMP_VIDEOS_STUCK:
+            self._repair_partial_tmp_videos_stuck(output_dir, diagnosis)
         elif damage == DamageType.PARQUET_NO_VIDEO:
             self._repair_parquet_no_video(output_dir, vcodec=vcodec)
         elif damage == DamageType.META_STALE:
@@ -380,6 +379,60 @@ class DatasetRepairService:
 
     def _repair_meta_stale(self, dataset_dir: Path) -> None:
         self._patch_info_totals_from_parquet(dataset_dir)
+        self._drop_missing_video_keys(dataset_dir)
+
+    def _repair_partial_tmp_videos_stuck(
+        self,
+        dataset_dir: Path,
+        diagnosis: DiagnosisResult,
+    ) -> None:
+        """Move recoverable tmp videos into their canonical ``videos/<key>/``
+        location, then patch totals and drop any video keys still missing.
+
+        ``dataset_dir`` here is the cleaned output (already scrubbed of tmp/).
+        Recoverable tmp paths point at the source dataset's tmp directory,
+        which still exists on disk.
+        """
+        info = load_info(dataset_dir)
+        recoverable: dict[str, Path] = diagnosis.details["recoverable_tmp_videos"]
+        for video_key, src_mp4 in recoverable.items():
+            dst_mp4 = build_video_path(dataset_dir, info, video_key, episode_index=0)
+            dst_mp4.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_mp4, dst_mp4)
+        self._patch_info_totals_from_parquet(dataset_dir)
+        self._drop_missing_video_keys(dataset_dir)
+
+    def _drop_missing_video_keys(self, dataset_dir: Path) -> None:
+        """Remove declared video features that have no mp4 file on disk.
+
+        Without this, ``verify_repaired_dataset`` flags every cleaned artifact
+        whose source declared more cameras than were actually recorded.
+        """
+        info = load_info(dataset_dir)
+        features = info.get("features", {})
+        missing = [
+            key
+            for key, feature in features.items()
+            if feature.get("dtype") == "video"
+            and not any((dataset_dir / "videos" / key).rglob("*.mp4"))
+        ]
+        if not missing:
+            return
+        for key in missing:
+            features.pop(key, None)
+        write_info(dataset_dir, info)
+
+    def _scrub_cleaned(self, dataset_dir: Path) -> None:
+        """Strip artifacts that should not survive into the cleaned copy:
+        the source's stale repair_status.json and any top-level ``tmp*/``
+        scratch directories left over from interrupted recordings.
+        """
+        stale_status = dataset_dir / "meta" / "repair_status.json"
+        if stale_status.exists():
+            stale_status.unlink()
+        for entry in dataset_dir.iterdir():
+            if entry.is_dir() and entry.name.startswith("tmp"):
+                shutil.rmtree(entry)
 
     def _repair_missing_cp(self, dataset_dir: Path, diagnosis: DiagnosisResult) -> None:
         cp_path = dataset_dir / "critical_phase_intervals.json"

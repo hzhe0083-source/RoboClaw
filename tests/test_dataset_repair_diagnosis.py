@@ -163,3 +163,57 @@ class TestDatasetDiagnosis:
         assert diagnosis.damage_type is DamageType.HEALTHY
         assert diagnosis.details["records_critical_phase_intervals"] is False
         assert diagnosis.details["log_path"] is None
+
+    def test_partial_tmp_videos_stuck_when_one_camera_missing_video(self, tmp_path: Path) -> None:
+        """Two declared cameras, one has its mp4 in videos/, the other only has
+        a tmp file matching its key. Should classify as PARTIAL_TMP_VIDEOS_STUCK.
+        """
+        dataset_dir = tmp_path / "partial_stuck"
+        _write_info(
+            dataset_dir,
+            total_episodes=0,
+            total_frames=0,
+            features={
+                "observation.images.front": {
+                    "dtype": "video",
+                    "shape": [64, 64, 3],
+                    "names": ["height", "width", "channel"],
+                },
+                "observation.images.side": {
+                    "dtype": "video",
+                    "shape": [64, 64, 3],
+                    "names": ["height", "width", "channel"],
+                },
+                "observation.state": {"dtype": "float32", "shape": [2], "names": None},
+                "episode_index": {"dtype": "int64", "shape": [1], "names": None},
+            },
+        )
+        _write_parquet(dataset_dir, 3)
+        _write_video(dataset_dir, camera="observation.images.front")
+        tmp_dir = dataset_dir / "tmpabc"
+        tmp_dir.mkdir(parents=True)
+        (tmp_dir / "observation.images.side_000.mp4").write_bytes(b"mp4")
+
+        diagnosis = diagnose_dataset(dataset_dir)
+
+        assert diagnosis.damage_type is DamageType.PARTIAL_TMP_VIDEOS_STUCK
+        assert diagnosis.repairable is True
+        assert diagnosis.details["n_recoverable_tmp_videos"] == 1
+        assert "observation.images.side" in diagnosis.details["recoverable_tmp_videos"]
+
+    def test_unmatched_tmp_video_falls_back_to_meta_stale(self, tmp_path: Path) -> None:
+        """A tmp file whose key isn't in declared video_keys is garbage; the
+        dataset should still classify as META_STALE (info totals are stale).
+        """
+        dataset_dir = tmp_path / "unmatched_tmp"
+        _write_info(dataset_dir, total_episodes=0, total_frames=0)
+        _write_parquet(dataset_dir, 3)
+        _write_video(dataset_dir)
+        tmp_dir = dataset_dir / "tmpzzz"
+        tmp_dir.mkdir(parents=True)
+        (tmp_dir / "observation.images.front_streaming.mp4").write_bytes(b"mp4")
+
+        diagnosis = diagnose_dataset(dataset_dir)
+
+        assert diagnosis.damage_type is DamageType.META_STALE
+        assert diagnosis.details["n_recoverable_tmp_videos"] == 0

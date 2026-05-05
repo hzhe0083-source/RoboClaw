@@ -13,6 +13,7 @@ class DamageType(Enum):
     EMPTY_SHELL = "empty_shell"
     CRASH_NO_SAVE = "crash_no_save"
     TMP_VIDEOS_STUCK = "tmp_videos_stuck"
+    PARTIAL_TMP_VIDEOS_STUCK = "partial_tmp_videos_stuck"
     PARQUET_NO_VIDEO = "parquet_no_video"
     META_STALE = "meta_stale"
     FRAME_MISMATCH = "frame_mismatch"

@@ -397,3 +397,22 @@ async def test_repair_blocks_concurrent_start(tmp_path: Path) -> None:
 
     release.set()
     await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+
+async def test_log_sink_receives_job_lifecycle_events(tmp_path: Path) -> None:
+    a = _make_dataset(tmp_path, "a")
+    sink_lines: list[str] = []
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
+        log_sink=sink_lines.append,
+    )
+
+    job = await coord.start_diagnosis(DiagnoseRequest())
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+    joined = "\n".join(sink_lines)
+    assert "[dataset-repair]" in joined
+    assert f"job {job.job_id} starting" in joined
+    assert "diagnosed damage=meta_stale" in joined
+    assert f"job {job.job_id} completed" in joined

@@ -279,3 +279,124 @@ class TestDatasetRepairServiceOutputDir:
         assert not (output_dir / "meta" / "repair_status.json").exists()
         # Source's status file is unchanged (Phase 3 does not touch the source disk).
         assert (dataset_dir / "meta" / "repair_status.json").exists()
+
+    def test_in_place_repair_strips_top_level_tmp_dirs(self, tmp_path: Path) -> None:
+        """Top-level ``tmp*/`` scratch dirs in the source must not survive into
+        the cleaned artifact.
+        """
+        dataset_dir = tmp_path / "src"
+        _write_info(dataset_dir, total_episodes=0, total_frames=0)
+        _write_parquet(dataset_dir, [0, 0, 1])
+        _write_video(dataset_dir, 0)
+        _write_video(dataset_dir, 1)
+        tmp_dir = dataset_dir / "tmpxyz"
+        tmp_dir.mkdir()
+        (tmp_dir / "leftover.mp4").write_bytes(b"mp4")
+        output_dir = tmp_path / "out"
+
+        result = DatasetRepairService().repair(
+            _meta_stale_diagnosis(dataset_dir),
+            task="task",
+            vcodec="h264",
+            dry_run=False,
+            force=False,
+            output_dir=output_dir,
+        )
+
+        assert result.outcome == "repaired"
+        assert not (output_dir / "tmpxyz").exists()
+        # Source unchanged.
+        assert (dataset_dir / "tmpxyz" / "leftover.mp4").exists()
+
+    def test_meta_stale_drops_missing_video_keys(self, tmp_path: Path) -> None:
+        """If info declares a video key with no mp4 anywhere, META_STALE repair
+        drops the key so verify_repaired_dataset doesn't reject the result.
+        """
+        dataset_dir = tmp_path / "src"
+        meta_dir = dataset_dir / "meta"
+        meta_dir.mkdir(parents=True)
+        info = {
+            "total_episodes": 0,
+            "total_frames": 0,
+            "fps": 30,
+            "features": {
+                "observation.images.front": {"dtype": "video", "shape": [4, 4, 3], "names": None},
+                "observation.images.missing": {"dtype": "video", "shape": [4, 4, 3], "names": None},
+                "observation.state": {"dtype": "float32", "shape": [2], "names": None},
+                "episode_index": {"dtype": "int64", "shape": [1], "names": None},
+            },
+        }
+        (meta_dir / "info.json").write_text(json.dumps(info), encoding="utf-8")
+        _write_parquet(dataset_dir, [0, 0, 0])
+        _write_video(dataset_dir, 0)
+        output_dir = tmp_path / "out"
+
+        result = DatasetRepairService().repair(
+            _meta_stale_diagnosis(dataset_dir),
+            task="task",
+            vcodec="h264",
+            dry_run=False,
+            force=False,
+            output_dir=output_dir,
+        )
+
+        assert result.outcome == "repaired"
+        cleaned = json.loads((output_dir / "meta" / "info.json").read_text(encoding="utf-8"))
+        assert "observation.images.missing" not in cleaned["features"]
+        assert "observation.images.front" in cleaned["features"]
+
+    def test_partial_tmp_videos_stuck_moves_recoverable_to_canonical(self, tmp_path: Path) -> None:
+        """Recoverable tmp videos are copied to their canonical
+        videos/<key>/chunk-000/file-000.mp4 location.
+        """
+        dataset_dir = tmp_path / "src"
+        meta_dir = dataset_dir / "meta"
+        meta_dir.mkdir(parents=True)
+        info = {
+            "total_episodes": 0,
+            "total_frames": 0,
+            "fps": 30,
+            "features": {
+                "observation.images.front": {"dtype": "video", "shape": [4, 4, 3], "names": None},
+                "observation.images.side": {"dtype": "video", "shape": [4, 4, 3], "names": None},
+                "observation.state": {"dtype": "float32", "shape": [2], "names": None},
+                "episode_index": {"dtype": "int64", "shape": [1], "names": None},
+            },
+        }
+        (meta_dir / "info.json").write_text(json.dumps(info), encoding="utf-8")
+        _write_parquet(dataset_dir, [0, 0, 0])
+        _write_video(dataset_dir, 0)  # only 'front' canonical
+        tmp_dir = dataset_dir / "tmpxyz"
+        tmp_dir.mkdir()
+        side_mp4 = tmp_dir / "observation.images.side_000.mp4"
+        side_mp4.write_bytes(b"sidempfourdata")
+        diagnosis = DiagnosisResult(
+            dataset_dir=dataset_dir,
+            damage_type=DamageType.PARTIAL_TMP_VIDEOS_STUCK,
+            repairable=True,
+            details={
+                "n_parquet_rows": 3,
+                "recoverable_tmp_videos": {"observation.images.side": side_mp4},
+            },
+        )
+        output_dir = tmp_path / "out"
+
+        result = DatasetRepairService().repair(
+            diagnosis,
+            task="task",
+            vcodec="h264",
+            dry_run=False,
+            force=False,
+            output_dir=output_dir,
+        )
+
+        assert result.outcome == "repaired"
+        canonical_side = (
+            output_dir / "videos" / "observation.images.side" / "chunk-000" / "file-000.mp4"
+        )
+        assert canonical_side.exists()
+        assert canonical_side.read_bytes() == b"sidempfourdata"
+        # Source's tmp dir is untouched.
+        assert side_mp4.exists()
+        # Cleaned artifact's tmp dir was scrubbed.
+        assert not (output_dir / "tmpxyz").exists()

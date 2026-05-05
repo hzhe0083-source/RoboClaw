@@ -33,6 +33,7 @@ from .types import DiagnosisResult, RepairResult
 
 DiagnoseFn = Callable[[Path], DiagnosisResult]
 RepairFn = Callable[..., RepairResult]
+LogSink = Callable[[str], None]
 
 DEFAULT_TASK = "default-task"
 DEFAULT_VCODEC = "h264"
@@ -60,6 +61,7 @@ class DatasetRepairCoordinator:
         cleaned_root: Path | None = None,
         diagnose_fn: DiagnoseFn | None = None,
         repair_fn: RepairFn | None = None,
+        log_sink: LogSink | None = None,
         task: str = DEFAULT_TASK,
         vcodec: str = DEFAULT_VCODEC,
     ) -> None:
@@ -69,6 +71,7 @@ class DatasetRepairCoordinator:
         self._cleaned_root = cleaned_root or (datasets_root.parent / "cleaned")
         self._diagnose_fn: DiagnoseFn = diagnose_fn or diagnose_dataset
         self._repair_fn: RepairFn = repair_fn or repair_dataset
+        self._log_sink = log_sink
         self._task = task
         self._vcodec = vcodec
         self._lock = asyncio.Lock()
@@ -81,6 +84,11 @@ class DatasetRepairCoordinator:
     @property
     def datasets_root(self) -> Path:
         return self._datasets_root
+
+    def _log(self, message: str) -> None:
+        if self._log_sink is None:
+            return
+        self._log_sink(f"[dataset-repair] {message}")
 
     async def list_datasets(
         self,
@@ -118,6 +126,7 @@ class DatasetRepairCoordinator:
             self._jobs[job.job_id] = job
             self._cancel_event = asyncio.Event()
             self._subscribers[job.job_id] = set()
+            self._log(f"job {job.job_id} starting: kind={kind}, total={job.total}")
             if kind == "diagnose":
                 coro = self._run_diagnosis(job, dataset_records)
             else:
@@ -244,6 +253,7 @@ class DatasetRepairCoordinator:
         except Exception as exc:
             job.phase = "failed"
             job.updated_at = utc_now_iso()
+            self._log(f"job {job.job_id} failed: {type(exc).__name__}: {exc}")
             await self._publish(
                 job.job_id,
                 "error",
@@ -289,6 +299,7 @@ class DatasetRepairCoordinator:
             damage_type=damage,
             job_id=job.job_id,
         )
+        self._log(f"{dataset.id}: diagnosed damage={damage} repairable={result.repairable}")
         await self._publish(job.job_id, "item", item.model_dump())
 
     async def _repair_one(
@@ -302,6 +313,7 @@ class DatasetRepairCoordinator:
         cleaned_path = self._cleaned_output_path(dataset.id)
         # output_path was already populated by _build_initial_job; just flip status.
         item.status = "repairing"
+        self._log(f"{dataset.id}: repairing → {cleaned_path}")
         await self._publish(job.job_id, "item", item.model_dump())
 
         dataset_path = Path(dataset.path)
@@ -321,6 +333,7 @@ class DatasetRepairCoordinator:
             item.error = str(exc)
             job.processed += 1
             job.updated_at = utc_now_iso()
+            self._log(f"{dataset.id}: repair raised {type(exc).__name__}: {exc}")
             await self._publish(job.job_id, "item", item.model_dump())
             return
 
@@ -338,6 +351,8 @@ class DatasetRepairCoordinator:
         job.processed += 1
         job.updated_at = utc_now_iso()
         _bump_summary(job.summary, damage, diagnosis.repairable)
+        suffix = f" ({result.error})" if result.error else ""
+        self._log(f"{dataset.id}: outcome={result.outcome} damage={damage}{suffix}")
 
         if result.outcome == "repaired":
             cleaned_id = f"cleaned/{cleaned_path.name}"
@@ -376,6 +391,7 @@ class DatasetRepairCoordinator:
         else:
             job.phase = "completed"
         job.updated_at = utc_now_iso()
+        self._log(f"job {job.job_id} {job.phase}: processed={job.processed}/{job.total}")
         await self._publish(job.job_id, "complete", job.model_dump())
         if self._active_job is job:
             self._active_job = None
