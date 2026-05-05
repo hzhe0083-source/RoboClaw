@@ -299,8 +299,8 @@ class DatasetRepairCoordinator:
     ) -> None:
         item = job.items[index]
         cleaned_path = self._cleaned_output_path(dataset.id)
+        # output_path was already populated by _build_initial_job; just flip status.
         item.status = "repairing"
-        item.output_path = str(cleaned_path)
         await self._publish(job.job_id, "item", item.model_dump())
 
         dataset_path = Path(dataset.path)
@@ -327,8 +327,8 @@ class DatasetRepairCoordinator:
         item.damage_type = damage  # type: ignore[assignment]
         item.repairable = diagnosis.repairable
         item.error = result.error
-        # ``skipped`` covers HEALTHY/EMPTY_SHELL/unrepairable/dry-run/output-exists;
-        # they are not failures from the job's perspective, just nothing to do.
+        # ``skipped`` covers EMPTY_SHELL/unrepairable/dry-run/output-exists; they
+        # finish without writing a cleaned artifact but aren't job failures.
         if result.outcome in {"repaired", "healthy", "skipped"}:
             item.status = "done"
         else:
@@ -339,7 +339,9 @@ class DatasetRepairCoordinator:
         _bump_summary(job.summary, damage, diagnosis.repairable)
 
         if result.outcome == "repaired":
-            cleaned_id = f"local/{cleaned_path.name}"
+            # cleaned artifact lives at <root>/cleaned/local/<slug>; its dataset_id
+            # (the relative path future scans would surface) is "cleaned/local/<slug>".
+            cleaned_id = f"cleaned/local/{cleaned_path.name}"
             await asyncio.to_thread(
                 record_diagnosis,
                 dataset_path,

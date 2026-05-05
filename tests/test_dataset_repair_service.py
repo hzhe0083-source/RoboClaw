@@ -292,7 +292,7 @@ async def test_repair_writes_repair_status_with_cleaned_id(tmp_path: Path) -> No
     status = status_module.load_status(a)
     assert status is not None
     assert status.tag == "checked"
-    assert status.cleaned_dataset_id == "local/a"
+    assert status.cleaned_dataset_id == "cleaned/local/a"
     assert status.last_damage_type == "meta_stale"
     assert status.last_repair_job_id == job.job_id
 

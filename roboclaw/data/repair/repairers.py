@@ -197,6 +197,11 @@ class DatasetRepairService:
 
         if damage in IN_PLACE_DAMAGE_TYPES:
             shutil.copytree(dataset_dir, output_dir)
+            # Drop any source repair_status.json that came along — the cleaned
+            # artifact must not inherit the source's dirty/checked state.
+            stale_status = output_dir / "meta" / "repair_status.json"
+            if stale_status.exists():
+                stale_status.unlink()
 
         result = self._dispatch_repair(
             diagnosis,
@@ -296,6 +301,7 @@ class DatasetRepairService:
         task: str,
         output_dir: Path,
     ) -> None:
+        info = load_info(dataset_dir)
         recovery_rows = read_recovery_rows(dataset_dir)
         features = normalize_feature_shapes(info["features"])
         video_keys = get_video_keys(info)

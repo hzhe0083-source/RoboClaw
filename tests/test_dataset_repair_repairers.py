@@ -251,3 +251,31 @@ class TestDatasetRepairServiceOutputDir:
         assert result.outcome == "skipped"
         assert result.error == "dry run"
         assert not output_dir.exists()
+
+    def test_in_place_repair_strips_source_repair_status(self, tmp_path: Path) -> None:
+        """Cleaned artifact must not inherit the source's repair_status.json."""
+        dataset_dir = tmp_path / "src"
+        _write_info(dataset_dir, total_episodes=0, total_frames=0)
+        _write_parquet(dataset_dir, [0, 0, 1])
+        _write_video(dataset_dir, 0)
+        _write_video(dataset_dir, 1)
+        # Pre-populate the source with a stale status that would survive copytree.
+        (dataset_dir / "meta" / "repair_status.json").write_text(
+            json.dumps({"schema_version": 1, "tag": "dirty"}),
+            encoding="utf-8",
+        )
+        output_dir = tmp_path / "out"
+
+        result = DatasetRepairService().repair(
+            _meta_stale_diagnosis(dataset_dir),
+            task="task",
+            vcodec="h264",
+            dry_run=False,
+            force=False,
+            output_dir=output_dir,
+        )
+
+        assert result.outcome == "repaired"
+        assert not (output_dir / "meta" / "repair_status.json").exists()
+        # Source's status file is unchanged (Phase 3 does not touch the source disk).
+        assert (dataset_dir / "meta" / "repair_status.json").exists()
