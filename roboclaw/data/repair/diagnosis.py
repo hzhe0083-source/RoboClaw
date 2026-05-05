@@ -19,40 +19,66 @@ from .io import (
     safe_read_parquet_table,
     scan_parquet_files,
 )
-from .types import DamageType, DiagnosisResult
+from .types import DamageType, DiagnosisResult, TmpVideo
 
 log = logging.getLogger(__name__)
 
 
-def find_tmp_videos(dataset_dir: Path) -> dict[str, Path]:
-    result: dict[str, Path] = {}
+def parse_tmp_video_filename(mp4_path: Path) -> tuple[str, int | None]:
+    """Recover ``(video_key, episode_index)`` from a stuck tmp mp4 filename.
+
+    Mirrors the two lerobot writer naming patterns; falls back to the bare
+    stem when neither matches.
+    """
+    stem = mp4_path.stem
+    if stem.endswith("_streaming"):
+        return stem[: -len("_streaming")], None
+    parts = stem.rsplit("_", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return parts[0], int(parts[1])
+    return stem, None
+
+
+def find_tmp_videos(dataset_dir: Path) -> list[TmpVideo]:
+    """Walk top-level ``tmp*/`` dirs and return every stuck mp4 found.
+
+    Multiple files per video_key are common (different episodes from batch
+    encoding, or per-episode streaming residue from repeated crashes); each
+    file is its own ``TmpVideo`` entry — callers decide how to group.
+    """
+    result: list[TmpVideo] = []
+    if not dataset_dir.exists():
+        return result
     for tmp_dir in sorted(dataset_dir.iterdir()):
         if not tmp_dir.is_dir() or not tmp_dir.name.startswith("tmp"):
             continue
-        for mp4_path in tmp_dir.glob("*.mp4"):
-            parts = mp4_path.stem.rsplit("_", 1)
-            video_key = parts[0] if len(parts) == 2 and parts[1].isdigit() else mp4_path.stem
-            result[video_key] = mp4_path
+        for mp4_path in sorted(tmp_dir.glob("*.mp4")):
+            video_key, episode_index = parse_tmp_video_filename(mp4_path)
+            result.append(
+                TmpVideo(video_key=video_key, path=mp4_path, episode_index=episode_index)
+            )
     return result
 
 
 def find_recoverable_tmp_videos(
-    tmp_videos: dict[str, Path],
+    tmp_videos: list[TmpVideo],
     video_keys: list[str],
     dataset_dir: Path,
-) -> dict[str, Path]:
+) -> list[TmpVideo]:
     """Subset of *tmp_videos* whose key is declared in *video_keys* and whose
     canonical ``videos/<key>/`` location has no mp4 yet.
     """
-    recoverable: dict[str, Path] = {}
-    for key, path in tmp_videos.items():
-        if key not in video_keys:
-            continue
-        canonical = dataset_dir / "videos" / key
-        if canonical.exists() and any(canonical.rglob("*.mp4")):
-            continue
-        recoverable[key] = path
-    return recoverable
+    declared = set(video_keys)
+    return [
+        tmp
+        for tmp in tmp_videos
+        if tmp.video_key in declared and not _has_canonical_video(dataset_dir, tmp.video_key)
+    ]
+
+
+def _has_canonical_video(dataset_dir: Path, video_key: str) -> bool:
+    canonical = dataset_dir / "videos" / video_key
+    return canonical.exists() and any(canonical.rglob("*.mp4"))
 
 
 def has_frame_mismatch(recovery_count: int, images_per_camera: dict[str, int]) -> bool:

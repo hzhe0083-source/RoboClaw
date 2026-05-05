@@ -21,6 +21,23 @@ class DamageType(Enum):
 
 
 @dataclass(frozen=True)
+class TmpVideo:
+    """One stuck mp4 in a top-level ``tmp*/`` dir.
+
+    Two naming patterns ship from lerobot:
+
+    - Streaming encoder writes ``<video_key>_streaming.mp4`` per episode
+      (``video_utils.py``); ``episode_index`` is unknown from the filename.
+    - Batch encoder writes ``<video_key>_<NNN>.mp4`` (``dataset_writer.py``);
+      ``episode_index`` parses directly from the trailing ``NNN``.
+    """
+
+    video_key: str
+    path: Path
+    episode_index: int | None
+
+
+@dataclass(frozen=True)
 class DiagnosisResult:
     dataset_dir: Path
     damage_type: DamageType

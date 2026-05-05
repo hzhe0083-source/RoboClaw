@@ -19,7 +19,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from roboclaw.data.repair.repairers import DatasetRepairService, prepare_output_dir
-from roboclaw.data.repair.types import DamageType, DiagnosisResult
+from roboclaw.data.repair.types import DamageType, DiagnosisResult, TmpVideo
 
 
 def _write_info(dataset_dir: Path, *, total_episodes: int = 0, total_frames: int = 0) -> None:
@@ -376,7 +376,13 @@ class TestDatasetRepairServiceOutputDir:
             repairable=True,
             details={
                 "n_parquet_rows": 3,
-                "recoverable_tmp_videos": {"observation.images.side": side_mp4},
+                "recoverable_tmp_videos": [
+                    TmpVideo(
+                        video_key="observation.images.side",
+                        path=side_mp4,
+                        episode_index=0,
+                    ),
+                ],
             },
         )
         output_dir = tmp_path / "out"
@@ -400,3 +406,73 @@ class TestDatasetRepairServiceOutputDir:
         assert side_mp4.exists()
         # Cleaned artifact's tmp dir was scrubbed.
         assert not (output_dir / "tmpxyz").exists()
+
+    def test_partial_tmp_videos_stuck_writes_each_episode_for_batch_naming(
+        self, tmp_path: Path
+    ) -> None:
+        """Two ``<key>_<NNN>.mp4`` files for the same camera land at distinct
+        canonical episodes (000, 001).
+        """
+        dataset_dir = tmp_path / "src"
+        meta_dir = dataset_dir / "meta"
+        meta_dir.mkdir(parents=True)
+        info = {
+            "total_episodes": 0,
+            "total_frames": 0,
+            "fps": 30,
+            "features": {
+                "observation.images.side": {"dtype": "video", "shape": [4, 4, 3], "names": None},
+                "observation.state": {"dtype": "float32", "shape": [2], "names": None},
+                "episode_index": {"dtype": "int64", "shape": [1], "names": None},
+            },
+        }
+        (meta_dir / "info.json").write_text(json.dumps(info), encoding="utf-8")
+        _write_parquet(dataset_dir, [0, 0, 0])
+        # No canonical for 'side' — both episodes are stuck in tmp dirs.
+        tmp0 = dataset_dir / "tmpaaa"
+        tmp0.mkdir()
+        (tmp0 / "observation.images.side_000.mp4").write_bytes(b"ep0")
+        tmp1 = dataset_dir / "tmpbbb"
+        tmp1.mkdir()
+        (tmp1 / "observation.images.side_001.mp4").write_bytes(b"ep1")
+        diagnosis = DiagnosisResult(
+            dataset_dir=dataset_dir,
+            damage_type=DamageType.PARTIAL_TMP_VIDEOS_STUCK,
+            repairable=True,
+            details={
+                "n_parquet_rows": 3,
+                "recoverable_tmp_videos": [
+                    TmpVideo(
+                        video_key="observation.images.side",
+                        path=tmp0 / "observation.images.side_000.mp4",
+                        episode_index=0,
+                    ),
+                    TmpVideo(
+                        video_key="observation.images.side",
+                        path=tmp1 / "observation.images.side_001.mp4",
+                        episode_index=1,
+                    ),
+                ],
+            },
+        )
+        output_dir = tmp_path / "out"
+
+        result = DatasetRepairService().repair(
+            diagnosis,
+            task="task",
+            vcodec="h264",
+            dry_run=False,
+            force=False,
+            output_dir=output_dir,
+        )
+
+        # The parquet has only one episode, so verify will reject any second
+        # canonical episode that doesn't exist; result is "failed" but the
+        # canonical files have still been written, which is what we're testing.
+        ep0 = output_dir / "videos" / "observation.images.side" / "chunk-000" / "file-000.mp4"
+        ep1 = output_dir / "videos" / "observation.images.side" / "chunk-000" / "file-001.mp4"
+        assert ep0.exists() and ep0.read_bytes() == b"ep0"
+        assert ep1.exists() and ep1.read_bytes() == b"ep1"
+        # And the result either repaired or failed-on-verify depending on parquet,
+        # but the file relocation must have happened.
+        assert result.outcome in {"repaired", "failed"}

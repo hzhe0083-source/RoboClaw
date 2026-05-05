@@ -26,7 +26,7 @@ from .io import (
     write_info,
 )
 from .lerobot_adapter import LeRobotDatasetAdapter
-from .types import SKIP_FRAME_KEYS, DamageType, DiagnosisResult, RepairResult
+from .types import SKIP_FRAME_KEYS, DamageType, DiagnosisResult, RepairResult, TmpVideo
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +38,20 @@ IN_PLACE_DAMAGE_TYPES = {
     DamageType.MISSING_CP,
     DamageType.PARTIAL_TMP_VIDEOS_STUCK,
 }
+
+
+def group_tmp_videos_by_key(tmp_videos: list[TmpVideo]) -> dict[str, list[TmpVideo]]:
+    """Group ``TmpVideo`` entries by ``video_key``.
+
+    Each per-key list is sorted by ``(episode_index ?? 0, path)`` so callers
+    that just want "the first match" get a deterministic order.
+    """
+    grouped: dict[str, list[TmpVideo]] = {}
+    for tmp in tmp_videos:
+        grouped.setdefault(tmp.video_key, []).append(tmp)
+    for entries in grouped.values():
+        entries.sort(key=lambda tmp: (tmp.episode_index if tmp.episode_index is not None else 0, str(tmp.path)))
+    return grouped
 
 
 def prepare_output_dir(output_dir: Path, *, force: bool) -> bool:
@@ -304,7 +318,8 @@ class DatasetRepairService:
         recovery_rows = read_recovery_rows(dataset_dir)
         features = normalize_feature_shapes(info["features"])
         video_keys = get_video_keys(info)
-        tmp_videos: dict[str, Path] = diagnosis.details["tmp_videos"]
+        tmp_videos: list[TmpVideo] = diagnosis.details["tmp_videos"]
+        tmp_by_key = group_tmp_videos_by_key(tmp_videos)
         non_video_features = {
             key: value for key, value in features.items() if value.get("dtype") not in {"video", "image"}
         }
@@ -334,9 +349,12 @@ class DatasetRepairService:
         dataset.finalize()
 
         for video_key in video_keys:
-            if video_key not in tmp_videos:
+            if video_key not in tmp_by_key:
                 continue
-            src_mp4 = tmp_videos[video_key]
+            # Single-episode case: take the first matching tmp video. Multi-episode
+            # streaming residue is rare in practice; if it shows up the deterministic
+            # ordering from ``group_tmp_videos_by_key`` picks the lowest episode.
+            src_mp4 = tmp_by_key[video_key][0].path
             dst_mp4 = build_video_path(output_dir, info, video_key, episode_index=0)
             dst_mp4.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_mp4, dst_mp4)
@@ -392,15 +410,36 @@ class DatasetRepairService:
         ``dataset_dir`` here is the cleaned output (already scrubbed of tmp/).
         Recoverable tmp paths point at the source dataset's tmp directory,
         which still exists on disk.
+
+        Multiple stuck files for the same key are written to distinct
+        canonical episode slots: ``_<NNN>``-named files keep their parsed
+        episode index, ``_streaming.mp4`` files are sequenced from 0.
         """
         info = load_info(dataset_dir)
-        recoverable: dict[str, Path] = diagnosis.details["recoverable_tmp_videos"]
-        for video_key, src_mp4 in recoverable.items():
-            dst_mp4 = build_video_path(dataset_dir, info, video_key, episode_index=0)
-            dst_mp4.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_mp4, dst_mp4)
+        recoverable: list[TmpVideo] = diagnosis.details["recoverable_tmp_videos"]
+        recoverable_by_key = group_tmp_videos_by_key(recoverable)
+        for video_key, entries in recoverable_by_key.items():
+            self._copy_tmp_videos_to_canonical(dataset_dir, info, video_key, entries)
         self._patch_info_totals_from_parquet(dataset_dir)
         self._drop_missing_video_keys(dataset_dir)
+
+    def _copy_tmp_videos_to_canonical(
+        self,
+        dataset_dir: Path,
+        info: dict[str, Any],
+        video_key: str,
+        entries: list[TmpVideo],
+    ) -> None:
+        streaming_index = 0
+        for tmp in entries:
+            if tmp.episode_index is not None:
+                episode_index = tmp.episode_index
+            else:
+                episode_index = streaming_index
+                streaming_index += 1
+            dst_mp4 = build_video_path(dataset_dir, info, video_key, episode_index)
+            dst_mp4.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(tmp.path, dst_mp4)
 
     def _drop_missing_video_keys(self, dataset_dir: Path) -> None:
         """Remove declared video features that have no mp4 file on disk.
