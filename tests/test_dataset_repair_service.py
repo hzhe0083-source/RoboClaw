@@ -416,3 +416,61 @@ async def test_log_sink_receives_job_lifecycle_events(tmp_path: Path) -> None:
     assert f"job {job.job_id} starting" in joined
     assert "diagnosed damage=meta_stale" in joined
     assert f"job {job.job_id} completed" in joined
+
+
+async def test_list_datasets_rejects_root_outside_scan_anchor(tmp_path: Path) -> None:
+    """``filters.root`` must not be allowed to escape the configured scan area."""
+    scan_root = tmp_path / "scan"
+    scan_root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    coord = DatasetRepairCoordinator(scan_root)
+
+    with pytest.raises(ValueError, match="must be inside"):
+        await coord.list_datasets(DatasetRepairFilter(root=str(outside)))
+
+
+async def test_list_datasets_accepts_root_inside_scan_anchor(tmp_path: Path) -> None:
+    scan_root = tmp_path / "scan"
+    scan_root.mkdir()
+    inside = scan_root / "subdir"
+    inside.mkdir()
+    coord = DatasetRepairCoordinator(scan_root)
+
+    # Equal to anchor and a child both pass.
+    await coord.list_datasets(DatasetRepairFilter(root=str(scan_root)))
+    await coord.list_datasets(DatasetRepairFilter(root=str(inside)))
+
+
+async def test_late_subscriber_to_failed_job_receives_structured_error(tmp_path: Path) -> None:
+    """When a job has already failed, ``stream_events`` must emit
+    ``{"job": ..., "error": ...}`` for the terminal ``error`` event so late
+    subscribers see the same shape as live failures.
+    """
+    _make_dataset(tmp_path, "a")
+
+    def _diagnose(_path: Path) -> DiagnosisResult:
+        # RuntimeError is *not* in ``ITEM_BOUNDARY_EXCEPTIONS``, so it bubbles
+        # out of ``_diagnose_one`` and into ``_run_worker``'s except clause —
+        # the path that flips the job to ``failed``.
+        raise RuntimeError("boom from diagnose")
+
+    coord = DatasetRepairCoordinator(tmp_path, diagnose_fn=_diagnose)
+    job = await coord.start_diagnosis(DiagnoseRequest())
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+    final = await coord.get_job(job.job_id)
+    assert final is not None
+    assert final.phase == "failed"
+    assert final.error == "boom from diagnose"
+
+    events: list[dict] = []
+    async for event in coord.stream_events(job.job_id):
+        events.append(event)
+
+    error_events = [e for e in events if e["type"] == "error"]
+    assert len(error_events) == 1
+    payload = error_events[0]["data"]
+    assert isinstance(payload, dict)
+    assert "job" in payload and "error" in payload
+    assert payload["error"] == "boom from diagnose"
