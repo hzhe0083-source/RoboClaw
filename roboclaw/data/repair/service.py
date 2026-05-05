@@ -5,33 +5,37 @@ A single global job runs at a time.  The coordinator owns:
 - the ``asyncio.Lock`` that enforces mutual exclusion,
 - the ``cancel_event`` consulted at every dataset boundary,
 - the SSE event fan-out (one ``asyncio.Queue`` per subscriber).
-
-Phase 1 implements diagnosis only; the repair worker is Phase 3.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
 from . import selection
 from .diagnosis import diagnose_dataset
+from .repairers import repair_dataset
 from .schemas import (
     DamageSummary,
     DatasetJobItem,
     DatasetRepairDataset,
     DatasetRepairFilter,
     DiagnoseRequest,
+    JobKind,
     JobPhase,
     RepairJobState,
 )
-from .status import record_diagnosis, utc_now_iso
-from .types import DiagnosisResult
+from .status import mark_checked, record_diagnosis, utc_now_iso
+from .types import DiagnosisResult, RepairResult
 
 DiagnoseFn = Callable[[Path], DiagnosisResult]
+RepairFn = Callable[..., RepairResult]
+
+DEFAULT_TASK = "default-task"
+DEFAULT_VCODEC = "h264"
 
 ITEM_BOUNDARY_EXCEPTIONS = (FileNotFoundError, PermissionError, OSError, ValueError)
 TERMINAL_PHASES: set[JobPhase] = {"completed", "failed", "cancelled"}
@@ -54,9 +58,15 @@ class DatasetRepairCoordinator:
         datasets_root: Path,
         *,
         diagnose_fn: DiagnoseFn | None = None,
+        repair_fn: RepairFn | None = None,
+        task: str = DEFAULT_TASK,
+        vcodec: str = DEFAULT_VCODEC,
     ) -> None:
         self._datasets_root = datasets_root
         self._diagnose_fn: DiagnoseFn = diagnose_fn or diagnose_dataset
+        self._repair_fn: RepairFn = repair_fn or repair_dataset
+        self._task = task
+        self._vcodec = vcodec
         self._lock = asyncio.Lock()
         self._active_job: RepairJobState | None = None
         self._jobs: dict[str, RepairJobState] = {}
@@ -82,17 +92,33 @@ class DatasetRepairCoordinator:
         return self._jobs.get(job_id)
 
     async def start_diagnosis(self, request: DiagnoseRequest) -> RepairJobState:
+        return await self._start_job(request, kind="diagnose", phase="diagnosing")
+
+    async def start_repair(self, request: DiagnoseRequest) -> RepairJobState:
+        return await self._start_job(request, kind="repair", phase="repairing")
+
+    async def _start_job(
+        self,
+        request: DiagnoseRequest,
+        *,
+        kind: JobKind,
+        phase: JobPhase,
+    ) -> RepairJobState:
         async with self._lock:
             if self._active_job is not None and self._active_job.phase in ACTIVE_PHASES:
                 raise JobConflictError(self._active_job)
 
             dataset_records = await self._resolve_targets(request)
-            job = self._build_initial_job(dataset_records, kind="diagnose", phase="diagnosing")
+            job = self._build_initial_job(dataset_records, kind=kind, phase=phase)
             self._active_job = job
             self._jobs[job.job_id] = job
             self._cancel_event = asyncio.Event()
             self._subscribers[job.job_id] = set()
-            self._worker_task = asyncio.create_task(self._run_diagnosis(job, dataset_records))
+            if kind == "diagnose":
+                coro = self._run_diagnosis(job, dataset_records)
+            else:
+                coro = self._run_repair(job, dataset_records, request.force)
+            self._worker_task = asyncio.create_task(coro)
             self._worker_task.add_done_callback(_consume_task_exception)
             return job
 
@@ -184,12 +210,36 @@ class DatasetRepairCoordinator:
         job: RepairJobState,
         datasets: list[DatasetRepairDataset],
     ) -> None:
+        await self._run_worker(
+            job,
+            datasets,
+            lambda index, dataset: self._diagnose_one(job, index, dataset),
+        )
+
+    async def _run_repair(
+        self,
+        job: RepairJobState,
+        datasets: list[DatasetRepairDataset],
+        force: bool,
+    ) -> None:
+        await self._run_worker(
+            job,
+            datasets,
+            lambda index, dataset: self._repair_one(job, index, dataset, force),
+        )
+
+    async def _run_worker(
+        self,
+        job: RepairJobState,
+        datasets: list[DatasetRepairDataset],
+        process_one: Callable[[int, DatasetRepairDataset], Awaitable[None]],
+    ) -> None:
         try:
             for index, dataset in enumerate(datasets):
                 if self._cancel_event is not None and self._cancel_event.is_set():
                     await self._cancel_remaining(job, index)
                     break
-                await self._diagnose_one(job, index, dataset)
+                await process_one(index, dataset)
         except Exception as exc:
             job.phase = "failed"
             job.updated_at = utc_now_iso()
@@ -238,6 +288,79 @@ class DatasetRepairCoordinator:
             damage_type=damage,
             job_id=job.job_id,
         )
+        await self._publish(job.job_id, "item", item.model_dump())
+
+    async def _repair_one(
+        self,
+        job: RepairJobState,
+        index: int,
+        dataset: DatasetRepairDataset,
+        force: bool,
+    ) -> None:
+        item = job.items[index]
+        cleaned_path = self._cleaned_output_path(dataset.id)
+        item.status = "repairing"
+        item.output_path = str(cleaned_path)
+        await self._publish(job.job_id, "item", item.model_dump())
+
+        dataset_path = Path(dataset.path)
+        try:
+            diagnosis = await asyncio.to_thread(self._diagnose_fn, dataset_path)
+            result = await asyncio.to_thread(
+                self._repair_fn,
+                diagnosis,
+                task=self._task,
+                vcodec=self._vcodec,
+                dry_run=False,
+                force=force,
+                output_dir=cleaned_path,
+            )
+        except ITEM_BOUNDARY_EXCEPTIONS as exc:
+            item.status = "failed"
+            item.error = str(exc)
+            job.processed += 1
+            job.updated_at = utc_now_iso()
+            await self._publish(job.job_id, "item", item.model_dump())
+            return
+
+        damage = diagnosis.damage_type.value
+        item.damage_type = damage  # type: ignore[assignment]
+        item.repairable = diagnosis.repairable
+        item.error = result.error
+        # ``skipped`` covers HEALTHY/EMPTY_SHELL/unrepairable/dry-run/output-exists;
+        # they are not failures from the job's perspective, just nothing to do.
+        if result.outcome in {"repaired", "healthy", "skipped"}:
+            item.status = "done"
+        else:
+            item.status = "failed"
+
+        job.processed += 1
+        job.updated_at = utc_now_iso()
+        _bump_summary(job.summary, damage, diagnosis.repairable)
+
+        if result.outcome == "repaired":
+            cleaned_id = f"local/{cleaned_path.name}"
+            await asyncio.to_thread(
+                record_diagnosis,
+                dataset_path,
+                damage_type=damage,
+                job_id=job.job_id,
+            )
+            await asyncio.to_thread(
+                mark_checked,
+                dataset_path,
+                damage_type=damage,
+                job_id=job.job_id,
+                cleaned_dataset_id=cleaned_id,
+            )
+        elif result.outcome == "healthy":
+            await asyncio.to_thread(
+                mark_checked,
+                dataset_path,
+                damage_type="healthy",
+                job_id=job.job_id,
+            )
+
         await self._publish(job.job_id, "item", item.model_dump())
 
     async def _cancel_remaining(self, job: RepairJobState, start_index: int) -> None:

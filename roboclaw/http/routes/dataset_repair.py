@@ -56,6 +56,13 @@ def register_dataset_repair_routes(
         except JobConflictError as exc:
             raise HTTPException(status_code=409, detail=exc.current.model_dump()) from exc
 
+    @app.post("/api/dataset-repair/repair")
+    async def repair(req: DiagnoseRequest) -> RepairJobState:
+        try:
+            return await service.start_repair(req)
+        except JobConflictError as exc:
+            raise HTTPException(status_code=409, detail=exc.current.model_dump()) from exc
+
     @app.get("/api/dataset-repair/jobs/current")
     async def current_job() -> dict:
         job = await service.get_current_job()

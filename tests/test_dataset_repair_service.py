@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from roboclaw.data.repair import status as status_module
 from roboclaw.data.repair.schemas import DatasetRepairFilter, DiagnoseRequest
 from roboclaw.data.repair.service import DatasetRepairCoordinator, JobConflictError
-from roboclaw.data.repair.types import DamageType, DiagnosisResult
+from roboclaw.data.repair.types import DamageType, DiagnosisResult, RepairResult
 
 
 def _write_info(dataset_dir: Path) -> None:
@@ -211,3 +212,181 @@ async def test_list_datasets_uses_filters_root(tmp_path: Path) -> None:
     items = await coord.list_datasets(DatasetRepairFilter(root=str(other_root)))
 
     assert {item.id for item in items} == {"z"}
+
+
+# ----------------------------- start_repair ----------------------------------
+
+
+def _make_repair_fn(damage_by_name: dict[str, DamageType], outcome: str = "repaired"):
+    """Build a stub ``repair_fn`` that records the supplied ``output_dir``.
+
+    The stub does not touch disk — it just emulates the contract the
+    coordinator depends on.  Set ``outcome`` to ``"healthy"`` or ``"skipped"``
+    to exercise the corresponding branches.
+    """
+
+    received: list[dict] = []
+
+    def fn(diagnosis: DiagnosisResult, **kwargs) -> RepairResult:
+        received.append({"dataset_dir": diagnosis.dataset_dir, **kwargs})
+        damage = diagnosis.damage_type
+        if damage == DamageType.HEALTHY:
+            return RepairResult(diagnosis.dataset_dir, damage, "healthy")
+        return RepairResult(diagnosis.dataset_dir, damage, outcome)
+
+    fn.received = received  # type: ignore[attr-defined]
+    return fn
+
+
+async def test_start_repair_returns_repairing_phase(tmp_path: Path) -> None:
+    a = _make_dataset(tmp_path, "a")
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
+        repair_fn=_make_repair_fn({a.name: DamageType.META_STALE}),
+    )
+
+    job = await coord.start_repair(DiagnoseRequest())
+
+    assert job.kind == "repair"
+    assert job.phase == "repairing"
+    assert job.total == 1
+
+
+async def test_repair_completes_and_passes_output_dir(tmp_path: Path) -> None:
+    a = _make_dataset(tmp_path, "a")
+    repair_fn = _make_repair_fn({a.name: DamageType.META_STALE})
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
+        repair_fn=repair_fn,
+    )
+
+    job = await coord.start_repair(DiagnoseRequest())
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+    final = await coord.get_job(job.job_id)
+    assert final is not None
+    assert final.phase == "completed"
+    assert all(item.status == "done" for item in final.items)
+    # Repair function must receive the cleaned-output path.
+    assert len(repair_fn.received) == 1  # type: ignore[attr-defined]
+    call = repair_fn.received[0]  # type: ignore[attr-defined]
+    expected = tmp_path / "cleaned" / "local" / "a"
+    assert call["output_dir"] == expected
+    assert call["dry_run"] is False
+    assert final.items[0].output_path == str(expected)
+
+
+async def test_repair_writes_repair_status_with_cleaned_id(tmp_path: Path) -> None:
+    a = _make_dataset(tmp_path, "a")
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
+        repair_fn=_make_repair_fn({a.name: DamageType.META_STALE}, outcome="repaired"),
+    )
+
+    job = await coord.start_repair(DiagnoseRequest())
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+    status = status_module.load_status(a)
+    assert status is not None
+    assert status.tag == "checked"
+    assert status.cleaned_dataset_id == "local/a"
+    assert status.last_damage_type == "meta_stale"
+    assert status.last_repair_job_id == job.job_id
+
+
+async def test_repair_skipped_marks_item_done_with_error(tmp_path: Path) -> None:
+    a = _make_dataset(tmp_path, "a")
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
+        repair_fn=_make_repair_fn({a.name: DamageType.META_STALE}, outcome="skipped"),
+    )
+
+    job = await coord.start_repair(DiagnoseRequest())
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+    final = await coord.get_job(job.job_id)
+    assert final is not None
+    assert final.items[0].status == "done"
+
+
+async def test_repair_failure_marks_item_failed(tmp_path: Path) -> None:
+    a = _make_dataset(tmp_path, "a")
+
+    def repair_fn(diagnosis, **_kwargs):
+        return RepairResult(diagnosis.dataset_dir, diagnosis.damage_type, "failed", error="boom")
+
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
+        repair_fn=repair_fn,
+    )
+
+    job = await coord.start_repair(DiagnoseRequest())
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+    final = await coord.get_job(job.job_id)
+    assert final is not None
+    assert final.phase == "completed"
+    item = final.items[0]
+    assert item.status == "failed"
+    assert item.error == "boom"
+
+
+async def test_repair_diagnose_failure_uses_item_boundary(tmp_path: Path) -> None:
+    _make_dataset(tmp_path, "a")
+    _make_dataset(tmp_path, "b")
+
+    def diagnose(dataset_dir: Path) -> DiagnosisResult:
+        if dataset_dir.name == "a":
+            raise FileNotFoundError("missing meta")
+        return DiagnosisResult(
+            dataset_dir=dataset_dir, damage_type=DamageType.HEALTHY, repairable=True, details={}
+        )
+
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=diagnose,
+        repair_fn=_make_repair_fn({"a": DamageType.HEALTHY, "b": DamageType.HEALTHY}),
+    )
+    job = await coord.start_repair(DiagnoseRequest())
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})
+
+    final = await coord.get_job(job.job_id)
+    assert final is not None
+    statuses = {item.dataset_id: item.status for item in final.items}
+    assert statuses["a"] == "failed"
+    assert statuses["b"] == "done"
+
+
+async def test_repair_blocks_concurrent_start(tmp_path: Path) -> None:
+    import threading
+
+    _make_dataset(tmp_path, "a")
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_diagnose(dataset_dir: Path) -> DiagnosisResult:
+        started.set()
+        release.wait(timeout=2.0)
+        return DiagnosisResult(
+            dataset_dir=dataset_dir, damage_type=DamageType.META_STALE, repairable=True, details={}
+        )
+
+    coord = DatasetRepairCoordinator(
+        tmp_path,
+        diagnose_fn=slow_diagnose,
+        repair_fn=_make_repair_fn({"a": DamageType.META_STALE}),
+    )
+    job = await coord.start_repair(DiagnoseRequest())
+    while not started.is_set():
+        await asyncio.sleep(0.01)
+
+    with pytest.raises(JobConflictError):
+        await coord.start_repair(DiagnoseRequest())
+
+    release.set()
+    await _wait_for_phase(coord, job.job_id, {"completed", "failed", "cancelled"})

@@ -31,14 +31,24 @@ from .types import SKIP_FRAME_KEYS, DamageType, DiagnosisResult, RepairResult
 log = logging.getLogger(__name__)
 
 
-def prepare_output_dir(dataset_dir: Path, force: bool) -> tuple[Path, bool]:
-    out_dir = dataset_dir.parent / f"{dataset_dir.name}_repaired"
-    if out_dir.exists() and force:
-        shutil.rmtree(out_dir)
-        return out_dir, True
-    if out_dir.exists():
-        return out_dir, False
-    return out_dir, True
+IN_PLACE_DAMAGE_TYPES = {
+    DamageType.PARQUET_NO_VIDEO,
+    DamageType.META_STALE,
+    DamageType.FRAME_MISMATCH,
+    DamageType.MISSING_CP,
+}
+
+
+def prepare_output_dir(output_dir: Path, *, force: bool) -> bool:
+    """Reserve ``output_dir`` for a repair run.
+
+    Returns ``True`` if the caller may proceed (``output_dir`` is now absent).
+    Returns ``False`` if the directory already exists and ``force`` is not set.
+    """
+    if output_dir.exists() and force:
+        shutil.rmtree(output_dir)
+        return True
+    return not output_dir.exists()
 
 
 def get_single_episode_name(images_dir: Path, image_key: str) -> str:
@@ -163,6 +173,7 @@ class DatasetRepairService:
         vcodec: str,
         dry_run: bool,
         force: bool,
+        output_dir: Path,
     ) -> RepairResult:
         dataset_dir = diagnosis.dataset_dir
         damage = diagnosis.damage_type
@@ -176,14 +187,27 @@ class DatasetRepairService:
         if dry_run:
             return RepairResult(dataset_dir, damage, "skipped", error="dry run")
 
-        result = self._dispatch_repair(diagnosis, task=task, vcodec=vcodec, force=force)
+        if not prepare_output_dir(output_dir, force=force):
+            return RepairResult(
+                dataset_dir,
+                damage,
+                "skipped",
+                error=f"{output_dir} already exists",
+            )
+
+        if damage in IN_PLACE_DAMAGE_TYPES:
+            shutil.copytree(dataset_dir, output_dir)
+
+        result = self._dispatch_repair(
+            diagnosis,
+            task=task,
+            vcodec=vcodec,
+            output_dir=output_dir,
+        )
         if result.outcome != "repaired":
             return result
 
-        verify_dir = dataset_dir
-        if damage in {DamageType.CRASH_NO_SAVE, DamageType.TMP_VIDEOS_STUCK}:
-            verify_dir = dataset_dir.parent / f"{dataset_dir.name}_repaired"
-        verify_errors = verify_repaired_dataset(verify_dir)
+        verify_errors = verify_repaired_dataset(output_dir)
         if not verify_errors:
             return result
         return RepairResult(dataset_dir, damage, "failed", error="; ".join(verify_errors))
@@ -194,26 +218,33 @@ class DatasetRepairService:
         *,
         task: str,
         vcodec: str,
-        force: bool,
+        output_dir: Path,
     ) -> RepairResult:
         dataset_dir = diagnosis.dataset_dir
         damage = diagnosis.damage_type
         if damage == DamageType.CRASH_NO_SAVE:
-            _, rebuilt = self._repair_crash_no_save(dataset_dir, diagnosis, task=task, vcodec=vcodec, force=force)
-            if not rebuilt:
-                return RepairResult(dataset_dir, damage, "skipped", error="_repaired already exists")
+            self._repair_crash_no_save(
+                dataset_dir,
+                diagnosis,
+                task=task,
+                vcodec=vcodec,
+                output_dir=output_dir,
+            )
         elif damage == DamageType.TMP_VIDEOS_STUCK:
-            _, rebuilt = self._repair_tmp_videos_stuck(dataset_dir, diagnosis, task=task, force=force)
-            if not rebuilt:
-                return RepairResult(dataset_dir, damage, "skipped", error="_repaired already exists")
+            self._repair_tmp_videos_stuck(
+                dataset_dir,
+                diagnosis,
+                task=task,
+                output_dir=output_dir,
+            )
         elif damage == DamageType.PARQUET_NO_VIDEO:
-            self._repair_parquet_no_video(dataset_dir, vcodec=vcodec)
+            self._repair_parquet_no_video(output_dir, vcodec=vcodec)
         elif damage == DamageType.META_STALE:
-            self._repair_meta_stale(dataset_dir)
+            self._repair_meta_stale(output_dir)
         elif damage == DamageType.FRAME_MISMATCH:
-            self._repair_frame_mismatch(dataset_dir, diagnosis)
+            self._repair_frame_mismatch(output_dir, diagnosis)
         elif damage == DamageType.MISSING_CP:
-            self._repair_missing_cp(dataset_dir, diagnosis)
+            self._repair_missing_cp(output_dir, diagnosis)
         return RepairResult(dataset_dir, damage, "repaired")
 
     def _repair_crash_no_save(
@@ -223,12 +254,8 @@ class DatasetRepairService:
         *,
         task: str,
         vcodec: str,
-        force: bool,
-    ) -> tuple[Path, bool]:
-        out_dir, should_proceed = prepare_output_dir(dataset_dir, force)
-        if not should_proceed:
-            return out_dir, False
-
+        output_dir: Path,
+    ) -> None:
         info = load_info(dataset_dir)
         recovery_rows = read_recovery_rows(dataset_dir)
         features = normalize_feature_shapes(info["features"])
@@ -239,9 +266,9 @@ class DatasetRepairService:
             raise ValueError(f"No usable frames available to rebuild {dataset_dir}")
 
         dataset = self._adapter.create_dataset(
-            repo_id=f"local/{out_dir.name}",
+            repo_id=f"local/{output_dir.name}",
             fps=int(info["fps"]),
-            root=out_dir,
+            root=output_dir,
             robot_type=info.get("robot_type"),
             features=features,
             use_videos=bool(image_keys),
@@ -259,8 +286,7 @@ class DatasetRepairService:
         )
         dataset.save_episode()
         dataset.finalize()
-        copy_critical_phase_intervals(dataset_dir, out_dir, max_frames=actual_frames)
-        return out_dir, True
+        copy_critical_phase_intervals(dataset_dir, output_dir, max_frames=actual_frames)
 
     def _repair_tmp_videos_stuck(
         self,
@@ -268,13 +294,8 @@ class DatasetRepairService:
         diagnosis: DiagnosisResult,
         *,
         task: str,
-        force: bool,
-    ) -> tuple[Path, bool]:
-        out_dir, should_proceed = prepare_output_dir(dataset_dir, force)
-        if not should_proceed:
-            return out_dir, False
-
-        info = load_info(dataset_dir)
+        output_dir: Path,
+    ) -> None:
         recovery_rows = read_recovery_rows(dataset_dir)
         features = normalize_feature_shapes(info["features"])
         video_keys = get_video_keys(info)
@@ -284,9 +305,9 @@ class DatasetRepairService:
         }
 
         dataset = self._adapter.create_dataset(
-            repo_id=f"local/{out_dir.name}",
+            repo_id=f"local/{output_dir.name}",
             fps=int(info["fps"]),
-            root=out_dir,
+            root=output_dir,
             robot_type=info.get("robot_type"),
             features=non_video_features,
             use_videos=False,
@@ -311,19 +332,18 @@ class DatasetRepairService:
             if video_key not in tmp_videos:
                 continue
             src_mp4 = tmp_videos[video_key]
-            dst_mp4 = build_video_path(out_dir, info, video_key, episode_index=0)
+            dst_mp4 = build_video_path(output_dir, info, video_key, episode_index=0)
             dst_mp4.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_mp4, dst_mp4)
 
-        out_info = load_info(out_dir)
+        out_info = load_info(output_dir)
         out_info["features"] = dict(info["features"])
         out_info["total_episodes"] = 1
         out_info["total_frames"] = len(recovery_rows)
         out_info["video_path"] = info.get("video_path") or DEFAULT_VIDEO_PATH
-        write_info(out_dir, out_info)
-        patch_episodes_video_columns(out_dir, video_keys, len(recovery_rows), int(info["fps"]))
-        copy_critical_phase_intervals(dataset_dir, out_dir)
-        return out_dir, True
+        write_info(output_dir, out_info)
+        patch_episodes_video_columns(output_dir, video_keys, len(recovery_rows), int(info["fps"]))
+        copy_critical_phase_intervals(dataset_dir, output_dir)
 
     def _repair_parquet_no_video(self, dataset_dir: Path, *, vcodec: str) -> None:
         info = load_info(dataset_dir)
@@ -429,6 +449,7 @@ def repair_dataset(
     vcodec: str,
     dry_run: bool,
     force: bool,
+    output_dir: Path,
 ) -> RepairResult:
     return _REPAIR_SERVICE.repair(
         diagnosis,
@@ -436,4 +457,5 @@ def repair_dataset(
         vcodec=vcodec,
         dry_run=dry_run,
         force=force,
+        output_dir=output_dir,
     )
